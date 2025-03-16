@@ -4,6 +4,7 @@
 # Student 1: Name, Student Number
 # Student 2: Name, Student Number (if applicable)
 #
+# We assert that the code submitted here is entirely our own 
 # creation, and will indicate otherwise when it is not.
 #
 ######################## Bitmap Display Configuration ########################
