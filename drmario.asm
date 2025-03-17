@@ -10,8 +10,8 @@
 ######################## Bitmap Display Configuration ########################
 # - Unit width in pixels:       2
 # - Unit height in pixels:      2
-# - Display width in pixels:    64
-# - Display height in pixels:   64
+# - Display width in pixels:    128
+# - Display height in pixels:   128
 # - Base Address for Display:   0x10008000 ($gp)
 ##############################################################################
 
@@ -27,6 +27,9 @@ ADDR_KBRD: .word 0xffff0000
 ##############################################################################
 # Mutable Data
 ##############################################################################
+
+# stored starting at address 0x10010000
+
 # store the codes for each colour as data values (see address 0x10010000)
 red: .word 0xff0000
 green: .word 0x00ff00
@@ -38,11 +41,44 @@ gray: .word 0x808080
 row: .word 0x00000100
 step: .word 0x0000004
 
-# allocate a block to format the bitmap in memory properly
-spacer: .space 4
+# the (x,y) coordinates of the playing area on the bitmap
+GAME_DSPL_X: .word 0x00000006
+GAME_DSPL_Y: .word 0x00000012
 
-# allocate 8 x 16 = 128 words (512 bytes) representing each pixel of the bitmap
-bitmap: .space 512
+# number of bytes corresponding to the row and step of the playing area
+game_row: .word 0x00000064
+game_step: .word 0x00000100
+
+# allocate a block to format the bitmap in memory properly
+spacer: .space 8
+
+# allocate 24 x 40 = 960 words (3840 bytes) representing each pixel of the playing area
+GAME_MEMORY_ADDR: .word 0x10009220       # address of the state of the game stored in memory
+GAME_MEMORY: .space 3840            # starts at address 0x10010040
+
+
+
+
+
+
+
+
+##############################################################################
+# Notes
+##############################################################################
+
+# - finish get_info to map pixel on bitmap to game memory
+# - finalize what each byte holds (orientation, type, ...)
+# - figure out how to do the rotation, see original game
+# - implement movement (finish milestone 2)
+
+##############################################################################
+
+
+
+
+
+
 
 ##############################################################################
 # Code
@@ -55,7 +91,7 @@ bitmap: .space 512
 ##############################################################################
 
 .macro get_pixel (%x, %y)
-    # given (x,y) coordinates, returns the corresponding address in the display
+    # given (x,y) coordinates, returns the corresponding address in the bitmap display
     
     move $a0, %x        # load x-coordinate into the first function argument register
     move $a1, %y        # load y-coordinate into the second function argument register
@@ -130,6 +166,21 @@ bitmap: .space 512
     draw_pixel ($a2, $a0, $a1)      # draw the fourth pixel
 .end_macro
 
+.macro get_info (%x, %y)
+    # returns the address in game memory corresponding to the pixel at 
+    # coordinate (x,y) on the bitmap; holds extra information
+    
+    move $a0, %x                # load x-coordinate into function argument register
+    move $a1, %y                # load y-coordinate into function argument register
+    lw $t0, GAME_DSPL_X         # load x-offset of bitmap to playing area
+    lw $t1, GAME_DSPL_Y         # load y-offset of bitmap to playing area
+    sub $v0, $a0, $t0           # subtract the x-offset from the x-coordinate
+    sub $v1, $a1, $t1           # subtract the y-offset from the y-coordinate
+    
+    # ...
+
+.end_macro
+
 ##############################################################################
 # Main Game Code
 ##############################################################################
@@ -145,16 +196,62 @@ main:
 
 game_loop:
     # 1a. Check if key has been pressed
+    lw $t0, ADDR_KBRD               # load the base address for the keyboard
+    lw $t8, 0($t0)                  # load the first word from the keyboard: flag
+    beq $t8, 1, keyboard_input      # if a word was detected, handle the input
+    
+    
+    
+    # fetch the prospective move
+    # check for collisions
+        # ...
+    # move the capsule
+        # W pressed
+        # A pressed
+        # ...
+    
+    
+    
     # 1b. Check which key has been pressed
-    # 2a. Check for collisions
-	# 2b. Update locations (capsules)
+    keyboard_input:
+        lw $t9, 4($t0)          # load in the second word from the keyboard: actual input value
+        
+        beq $t9, 0x71, Q_pressed    # user pressed Q: quit the program
+    
+        # 2a. Check for collisions
+        
+        
+    	# 2b. Update locations (capsules)
+    	beq $t9, 0x57, W_pressed    # user pressed W: rotate capsule 90 degrees clockwise
+        beq $t9, 0x41, A_pressed    # user pressed A: move capsule to the left
+        beq $t9, 0x53, S_pressed    # user pressed S: move capsule down
+        beq $t9, 0x44, D_pressed    # user pressed D: move capsule to the right
+        
+        
 	# 3. Draw the screen
+	
+	
 	# 4. Sleep
+	li $v0, 32         # load the syscall code for delay
+	li $a0, 15         # specify a delay of 15 ms (60 updates/second)
+	syscall            # invoke the syscall
 
     # 5. Go back to Step 1
     j game_loop
 
+    
+W_pressed:
 
+A_pressed:
+
+S_pressed:
+
+D_pressed:
+
+Q_pressed:
+    li $v0, 10          # load the syscall code for quitting the program
+   syscall              # invoke the syscall
+    
 
 
 draw_scene:
