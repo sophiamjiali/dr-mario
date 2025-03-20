@@ -54,7 +54,7 @@ spacer: .space 8
 
 # allocate 24 x 40 = 960 words (3840 bytes) representing each pixel of the playing area
 GAME_MEMORY_ADDR: .word 0x10009220       # address of the state of the game stored in memory
-GAME_MEMORY: .space 3840            # starts at address 0x10010040
+GAME_MEMORY: .space 3840                 # starts at address 0x10010040
 
 
 
@@ -166,6 +166,25 @@ GAME_MEMORY: .space 3840            # starts at address 0x10010040
     draw_pixel ($a2, $a0, $a1)      # draw the fourth pixel
 .end_macro
 
+.macro new_capsule ()
+    # generates a new capsule in the mouth of the bottle, storing 
+    # its address on the bitmap in $v0 and its orientation (default 
+    # down) in $v1
+    
+    random_colour ()                # generate a random colour, stored in $v1
+    li $t0, 17                      # set the x-coordinate
+    li $t1, 12                      # set the y-coordinate
+    draw_square ($v1, $t0, $t1)     # draw the top-half of the capsule
+    
+    get_pixel($t0, $t1)             # stores address of capsule in $v0
+    li $v1, 1                       # sets 'down = 1' as orientation in $v1
+    
+    random_colour ()                # generate a random colour, stored in $v1
+    li $t0, 17                      # set the x-coordinate
+    li $t1, 14                      # set the y-coordinate
+    draw_square ($v1, $t0, $t1)     # draw the bottom-half of the capsule
+.end_macro
+
 .macro get_info (%x, %y)
     # returns the address in game memory corresponding to the pixel at 
     # coordinate (x,y) on the bitmap; holds extra information
@@ -189,8 +208,10 @@ GAME_MEMORY: .space 3840            # starts at address 0x10010040
 main:
     # Initialize the game
     
-    # draw the bottle
-    jal draw_scene # draw the initial static scene
+    jal draw_scene                  # draw the initial static scene
+    new_capsule ()                  # draws a new capsule 
+    move $t8, $v0                   # load the capsule's address in the display to $t8
+    move $t9, $v1                   # load the capsule's orientation to $t9
     
     j game_loop
 
@@ -262,7 +283,7 @@ draw_scene:
     sw $ra, 0($sp)          # store the original $ra of main on the stack
     
     # initialize variables to draw the vertical walls of the bottle
-    li $t2, 42              # set the number oxf loops to perform to draw each line
+    li $t2, 42              # set the number of loops to perform to draw each line
     lw $t3, gray            # load the colour gray
     li $t5, 256             # set the increment to move to the next pixel (down)
     
@@ -322,15 +343,7 @@ draw_scene:
     jal paint_line
     
     # draw the initial two coloured capsules
-    random_colour ()                # generate a random colour, stored in $v1
-    li $t0, 17                      # set the x-coordinate
-    li $t1, 12                      # set the y-coordinate
-    draw_square ($v1, $t0, $t1)     # draw the top-half of the mouth's capsule
-    random_colour ()                # generate a random colour, stored in $v1
-    li $t0, 17                      # set the x-coordinate
-    li $t1, 14                      # set the y-coordinate
-    draw_square ($v1, $t0, $t1)     # draw the bottom-half of the mouth's capsule
-    
+
     random_colour ()                # generate a random colour, stored in $v1
     li $t0, 40                      # set the x-coordinate
     li $t1, 20                      # set the y-coordinate
