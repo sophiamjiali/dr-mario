@@ -37,10 +37,6 @@ blue: .word 0x0000ff
 black: .word 0x000000
 gray: .word 0x808080
 
-# number of bytes corresponding to the row and step of the display
-row: .word 0x00000100
-step: .word 0x0000004
-
 # the (x,y) coordinates of the playing area on the bitmap
 GAME_DSPL_X: .word 0x00000006
 GAME_DSPL_Y: .word 0x00000012
@@ -96,8 +92,8 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
     move $a0, %x        # load x-coordinate into the first function argument register
     move $a1, %y        # load y-coordinate into the second function argument register
     
-    lw $t0, row         # load the number of bytes to offset to the next row
-    lw $t1, step        # load the number of bytes to offset to the next pixel
+    li $t0, 256         # load the number of bytes to offset to the next row
+    li $t1, 4           # load the number of bytes to offset to the next pixel
     
     mult $t0, $a1       # calculate the y-offset of the pixel (relative to the top)
     mflo $t0            # extract the result from 'lo' register
@@ -164,6 +160,94 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
     draw_pixel ($a2, $a0, $a1)      # draw the third pixel
     addi $a0, $a0, -1               # move the x-coordinate back by one (left on the bitmap)
     draw_pixel ($a2, $a0, $a1)      # draw the fourth pixel
+.end_macro
+
+.macro get_coordinates (%address)
+    # given an address in the bitmap, get the corresponding (x,y) coordinates
+    
+    move $a0, %address      # load the address into a function argument register
+    
+    sub $t0, $a0, $gp       # fetch the offset of the address from the display's base address
+    srl $t0, $t0, 2         # divide the index by four to fetch the pixel index (shift right by 2)
+    li $t1, 256             # load the width of the display
+    div $t0, $t1            # divide the index by the width of the display
+    mfhi $v0                # set the x coordinate to the remainder
+    mflo $v1                # set the y coordinate to the quotient
+.end_macro
+
+.macro move_square (%x, %y, %direction)
+    # assuming no collisions, moves the square starting at (x,y) the given direction
+    
+    move $a0, %x        # load x-coordinate into function argument register
+    move $a1, %y        # load y-coordinate into function argument register
+    move $a2, %direction   # load the direction into function argument register
+    
+    get_pixel ($a0, $a1)        # fetch the address corresponding to the coordinate
+    lw $t0, 0($v0)              # fetch the colour of the coordinate
+    lw $t1, black               # load the colour black
+    
+    draw_square ($t1, $a0, $a1)     # colour the original square at (x,y) black
+    
+    beq $a2, 1, move_square_left        # if direction specifies left
+    beq $a2, 2, move_square_right       # if direction specifies right
+    beq $a2, 3, move_square_up          # if direction specifies up
+    beq $a2, 4, move_square_down        # if direction specifies down
+    
+    move_square_left:
+        subi $a0, $a0, 2                    # shift the x-coordinate left by two units
+        draw_square ($t0, $a0, $a1)         # draw the square at the new coordinates with the original colour
+        j move_square_done                  # completed, jump back
+    move_square_right:
+        addi $a0, $a0, 2                    # shift the x-coordinate right by two units
+        draw_square ($t0, $a0, $a1)         # draw the square at the new coordinates with the original colour
+        j move_square_done                  # completed, jump back
+    move_square_up:
+        subi $a1, $a1, 2                    # shift the y-coordinate up by two units
+        draw_square ($t0, $a0, $a1)         # draw the square at the new coordinates with the original colour
+        j move_square_done                  # completed, jump back
+    move_square_down:
+        addi $a1, $a1, 2                    # shift the y-coordinate down by two units
+        draw_square ($t0, $a0, $a1)         # draw the square at the new coordinates with the original colour
+        j move_square_done                  # completed, jump back
+   
+    move_square_done:                       # return label for structured jumping, macros don't need jr $ra
+.end_macro
+
+.macro move_capsule (%address, %orientation, %direction)
+    # given the address of the first half and its orientation, move it the specified direction
+
+    move $a0, %address                  # load address of the capsule's first half into function argument register
+    move $a1, %orientation              # load capsule's orientation into function argument register
+    li $a2, %direction                  # load the direction into function argument register
+    
+    get_coordinates ($a0)               # fetch the coordinates of the capsule's first half
+    
+    beq $a1, 1, move_vertical_capsule          # move the second half of the vertical capsule
+    beq $a1, 2, move_horizontal_capsule        # move the second half of the horizontal capsule
+    
+    move_vertical_capsule:
+        addi $v1, $v1, 2                        # the second half is below of the first half
+        move_square ($v0, $v1, $a2)             # move the capsule's second half first to avoid being overwritten
+        get_coordinates ($a0)                   # fetch the coordinates of the first half again
+        move_square ($v0, $v1, $a2)             # move first half second, avoids overwriting the second half
+        j move_capsule_done                     # return back to main
+        
+    move_horizontal_capsule:
+        beq $a2, 1, move_horizontal_capsule_left    # if moving left, move the capsule's first half first
+        
+        addi $v0, $v0, 4                        # the second half is to the right of the first half
+        move_square ($v0, $v1, $a2)             # move the second half first to avoid being overwritten
+        get_coordinates ($a0)                   # fetch the coordinates of the first half again
+        move_square ($v0, $v1, $a2)             # move first half second, avoids overwriting the second half
+        j move_capsule_done                     # return back to main
+        
+    move_horizontal_capsule_left: 
+        move_square ($v0, $v1, $a2)             # move the first half first to avoid being overwritten
+        addi $v0, $v0, 4                        # the second half is to the right of the first half
+        move_square ($v0, $v1, $a2)             # move the second half second, avoids overwriting the first half
+        j move_capsule_done                     # return back to main
+ 
+    move_capsule_done:                  # return label for structured jumping, macros don't need jr $ra
 .end_macro
 
 .macro new_capsule ()
@@ -280,32 +364,48 @@ game_loop:
 W_pressed:
     # assuming no collision will occur, rotate the capsule 90 degrees clockwise
     
-    lw $t0, black                           # fetch the colour black
+    get_coordinates ($t8)                   # fetch the coordinates corresponding to the address of the capsule
     
     beq $t9, 1, rotate_horizontally         # if the capsule is vertical, rotate to horizontal
     beq $t9, 2, rotate_vertically           # if the capsule is horizontal, rotate to vertical
     
     rotate_vertically:
-        lw $t1, 4($t8)                      # fetch the colour of the capsule's right half
-        sw $t0, 4($t8)                      # colour the original second half pixel black
-        sw $t1, 256($t8)                    # colour the pixel below the capsule's first half to the original colour
+        addi $v0, $v0, 2                    # the second half of the capsule is to the right of the first half
+        li $t0, 4                           # set the direction to move to down
+        move_square ($v0, $v1, $t0)         # move the capsule's second half down
+        addi $v1, $v1, 2                    # the second half is now below its original position
+        li $t0, 1                           # set the direction to move to left
+        move_square($v0, $v1, $t0)          # move the capsule's second half left
         li $t9, 1                           # set the capsule's orientation to vertical
         j w_pressed_done
     
     rotate_horizontally:
-        lw $t1, 256($t8)                    # fetch the colour of the capsule's second half (below)
-        sw $t0, 256($t8)                    # colour the original second half pixel black
-        sw $t1, 4($t8)                      # colour the pixel to the right of the capsule's first half the original colour
+        # move right then up
+        addi $v1, $v1, 2                    # the second half of the capsule is below the first half
+        li $t0, 2                           # set the direction to move to right
+        move_square ($v0, $v1, $t0)         # move the capsule's second half right
+        addi $v0, $v0, 2                    # the second half is now to the right of its original position
+        li $t0, 3                           # set the direction to move to up
+        move_square ($v0, $v1, $t0)         # move the capsule's second half up
         li $t9, 2                           # set the capsule's orientation to horizontal
         j w_pressed_done                    # return back to main
         
     w_pressed_done: jr $ra                  # return to the original address upon completion
 
 A_pressed:
+    # assuming no collision will occur, move the capsule to the left
+    move_capsule ($t8, $t9, 1)      # move the capsule left
+    jr $ra                          # return to main
 
 S_pressed:
+    # assuming no collisions will occur, move the capsule down
+    move_capsule ($t8, $t9, 4)      # move the capsule down
+    jr $ra                          # return to main
 
 D_pressed:
+    # assuming no collision will occur, move the capsule to the right
+    move_capsule ($t8, $t9, 2)      # move the capsue right
+    jr $ra                          # return to main
 
 Q_pressed:
     li $v0, 10          # load the syscall code for quitting the program
