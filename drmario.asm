@@ -191,13 +191,29 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
     
     move $a0, %x                # load x-coordinate into function argument register
     move $a1, %y                # load y-coordinate into function argument register
+    
     lw $t0, GAME_DSPL_X         # load x-offset of bitmap to playing area
     lw $t1, GAME_DSPL_Y         # load y-offset of bitmap to playing area
+    
     sub $v0, $a0, $t0           # subtract the x-offset from the x-coordinate
     sub $v1, $a1, $t1           # subtract the y-offset from the y-coordinate
     
     # ...
 
+.end_macro
+
+.macro save_ra ()
+    # saves the current return address in $ra to the stack, for when there are nested helper labels
+    
+    addi $sp, $sp, -4       # allocate space on the stack
+    sw $ra, 0($sp)          # store the original $ra of main on the stack
+.end_macro
+
+.macro load_ra ()
+    # loads the most recently saved return address back into $ra from the stack
+    
+    lw $ra, 0($sp)          # restore the original address
+    addi $sp, $sp, 4        # deallocate the space on the stack
 .end_macro
 
 ##############################################################################
@@ -223,6 +239,7 @@ game_loop:
     
     
     
+    
     # fetch the prospective move
     # check for collisions
         # ...
@@ -235,12 +252,11 @@ game_loop:
     
     # 1b. Check which key has been pressed
     keyboard_input:
-        lw $t9, 4($t0)          # load in the second word from the keyboard: actual input value
-        
+        lw $t9, 4($t0)              # load in the second word from the keyboard: actual input value
         beq $t9, 0x71, Q_pressed    # user pressed Q: quit the program
     
         # 2a. Check for collisions
-        
+            # ... if moves on, assumes no collision was found
         
     	# 2b. Update locations (capsules)
     	beq $t9, 0x57, W_pressed    # user pressed W: rotate capsule 90 degrees clockwise
@@ -262,6 +278,28 @@ game_loop:
 
     
 W_pressed:
+    # assuming no collision will occur, rotate the capsule 90 degrees clockwise
+    
+    lw $t0, black                           # fetch the colour black
+    
+    beq $t9, 1, rotate_horizontally         # if the capsule is vertical, rotate to horizontal
+    beq $t9, 2, rotate_vertically           # if the capsule is horizontal, rotate to vertical
+    
+    rotate_vertically:
+        lw $t1, 4($t8)                      # fetch the colour of the capsule's right half
+        sw $t0, 4($t8)                      # colour the original second half pixel black
+        sw $t1, 256($t8)                    # colour the pixel below the capsule's first half to the original colour
+        li $t9, 1                           # set the capsule's orientation to vertical
+        j w_pressed_done
+    
+    rotate_horizontally:
+        lw $t1, 256($t8)                    # fetch the colour of the capsule's second half (below)
+        sw $t0, 256($t8)                    # colour the original second half pixel black
+        sw $t1, 4($t8)                      # colour the pixel to the right of the capsule's first half the original colour
+        li $t9, 2                           # set the capsule's orientation to horizontal
+        j w_pressed_done                    # return back to main
+        
+    w_pressed_done: jr $ra                  # return to the original address upon completion
 
 A_pressed:
 
@@ -278,9 +316,7 @@ Q_pressed:
 draw_scene:
     # draws the initial static scene
     
-    # there are nested helper labels, save the original return address to main on the stack
-    addi $sp, $sp, -4       # allocate space on the stack
-    sw $ra, 0($sp)          # store the original $ra of main on the stack
+    save_ra ()              # there are nested helper labels, save the original return address
     
     # initialize variables to draw the vertical walls of the bottle
     li $t2, 42              # set the number of loops to perform to draw each line
@@ -343,7 +379,6 @@ draw_scene:
     jal paint_line
     
     # draw the initial two coloured capsules
-
     random_colour ()                # generate a random colour, stored in $v1
     li $t0, 40                      # set the x-coordinate
     li $t1, 20                      # set the y-coordinate
@@ -352,13 +387,9 @@ draw_scene:
     li $t0, 40                      # set the x-coordinate
     li $t1, 22                      # set the y-coordinate
     draw_square ($v1, $t0, $t1)     # draw the bottom-half of the mouth's capsule
-
-    # restore the original return address to main from the stack and return
-    lw $ra, 0($sp)          # restore the original address
-    addi $sp, $sp, 4        # deallocate the space on the stack
-    jr $ra                  # return back to main
     
-    jr $ra # return back to main at the next instruction
+    load_ra ()              # fetch the original return address
+    jr $ra                  # return back to main
 
     # helper label that paints a line for a given number of pixels long
     paint_line:
