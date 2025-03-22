@@ -221,15 +221,19 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
     li $a2, %direction                  # load the direction into function argument register
     
     get_coordinates ($a0)               # fetch the coordinates of the capsule's first half
+    move $t0, $v0                       # extract the x-coordinate
+    move $t1, $v1                       # extract the y-coordinate
     
     beq $a1, 1, move_vertical_capsule          # move the second half of the vertical capsule
     beq $a1, 2, move_horizontal_capsule        # move the second half of the horizontal capsule
     
     move_vertical_capsule:
         addi $v1, $v1, 2                        # the second half is below of the first half
-        move_square ($v0, $v1, $a2)             # move the capsule's second half first to avoid being overwritten
+        move_square ($t0, $t1, $a2)             # move the capsule's second half first to avoid being overwritten
         get_coordinates ($a0)                   # fetch the coordinates of the first half again
-        move_square ($v0, $v1, $a2)             # move first half second, avoids overwriting the second half
+        move $t0, $v0                           # extract the x-coordinate
+        move $t1, $v1                           # extract the y-coordinate
+        move_square ($t0, $t1, $a2)             # move first half second, avoids overwriting the second half
         j move_capsule_done                     # return back to main
         
     move_horizontal_capsule:
@@ -238,6 +242,8 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
         addi $v0, $v0, 4                        # the second half is to the right of the first half
         move_square ($v0, $v1, $a2)             # move the second half first to avoid being overwritten
         get_coordinates ($a0)                   # fetch the coordinates of the first half again
+        move $t0, $v0                           # extract the x-coordinate
+        move $t1, $v1                           # extract the y-coordinate
         move_square ($v0, $v1, $a2)             # move first half second, avoids overwriting the second half
         j move_capsule_done                     # return back to main
         
@@ -261,12 +267,13 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
     draw_square ($v1, $t0, $t1)     # draw the top-half of the capsule
     
     get_pixel($t0, $t1)             # stores address of capsule in $v0
-    li $v1, 1                       # sets 'down = 1' as orientation in $v1
     
     random_colour ()                # generate a random colour, stored in $v1
     li $t0, 17                      # set the x-coordinate
     li $t1, 14                      # set the y-coordinate
     draw_square ($v1, $t0, $t1)     # draw the bottom-half of the capsule
+    
+    li $v1, 1                       # sets 'down = 1' as orientation in $v1
 .end_macro
 
 .macro get_info (%x, %y)
@@ -318,48 +325,31 @@ main:
 game_loop:
     # 1a. Check if key has been pressed
     lw $t0, ADDR_KBRD               # load the base address for the keyboard
-    lw $t8, 0($t0)                  # load the first word from the keyboard: flag
-    beq $t8, 1, keyboard_input      # if a word was detected, handle the input
-    
-    
-    
-    
-    # fetch the prospective move
-    # check for collisions
-        # ...
-    # move the capsule
-        # W pressed
-        # A pressed
-        # ...
-    
-    
+    lw $t1, 0($t0)                  # load the first word from the keyboard: flag
+    beq $t1, 0, game_loop_done      # if a word was not detected, skip handling of the input
     
     # 1b. Check which key has been pressed
     keyboard_input:
-        lw $t9, 4($t0)              # load in the second word from the keyboard: actual input value
-        beq $t9, 0x71, Q_pressed    # user pressed Q: quit the program
+        lw $t2, 4($t0)              # load in the second word from the keyboard: actual input value
+        beq $t2, 0x71, Q_pressed    # user pressed Q: quit the program
     
         # 2a. Check for collisions
             # ... if moves on, assumes no collision was found
         
-    	# 2b. Update locations (capsules)
-    	beq $t9, 0x57, W_pressed    # user pressed W: rotate capsule 90 degrees clockwise
-        beq $t9, 0x41, A_pressed    # user pressed A: move capsule to the left
-        beq $t9, 0x53, S_pressed    # user pressed S: move capsule down
-        beq $t9, 0x44, D_pressed    # user pressed D: move capsule to the right
+    	# 2b. Update locations (capsules), # 3. Draw the screen
+    	beq $t2, 0x77, W_pressed    # user pressed W: rotate capsule 90 degrees clockwise
+        beq $t2, 0x61, A_pressed    # user pressed A: move capsule to the left
+        beq $t2, 0x73, S_pressed    # user pressed S: move capsule down
+        beq $t2, 0x64, D_pressed    # user pressed D: move capsule to the right
         
-        
-	# 3. Draw the screen
-	
-	
-	# 4. Sleep
-	li $v0, 32         # load the syscall code for delay
-	li $a0, 15         # specify a delay of 15 ms (60 updates/second)
-	syscall            # invoke the syscall
-
-    # 5. Go back to Step 1
-    j game_loop
-
+    game_loop_done:
+    	# 4. Sleep
+    	li $v0, 32         # load the syscall code for delay
+    	li $a0, 15         # specify a delay of 15 ms (60 updates/second)
+    	syscall            # invoke the syscall
+    
+        # 5. Go back to Step 1
+        j game_loop
     
 W_pressed:
     # assuming no collision will occur, rotate the capsule 90 degrees clockwise
