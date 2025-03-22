@@ -328,8 +328,8 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
 .end_macro
 
 .macro get_info (%x, %y)
-    # returns the address in game memory corresponding to the pixel at 
-    # coordinate (x,y) on the bitmap; holds extra information
+    # returns the orientation of the pixel at the coordinate (x,y); if its a virus
+    # or a split capsule, it is 0, else 1, 2, 3, 4 indicate left, right, up, down
     
     move $a0, %x                # load x-coordinate into function argument register
     move $a1, %y                # load y-coordinate into function argument register
@@ -517,13 +517,14 @@ draw_scene:
     
     # draw the initial two coloured capsules
     random_colour ()                # generate a random colour, stored in $v1
+    move $t2, $v0                   # extract the first half's colour
     li $t0, 40                      # set the x-coordinate
     li $t1, 20                      # set the y-coordinate
-    draw_square ($v1, $t0, $t1)     # draw the top-half of the mouth's capsule
+    draw_square ($t0, $t1, $t2)     # draw the top-half of the mouth's capsule
     random_colour ()                # generate a random colour, stored in $v1
     li $t0, 40                      # set the x-coordinate
     li $t1, 22                      # set the y-coordinate
-    draw_square ($v1, $t0, $t1)     # draw the bottom-half of the mouth's capsule
+    draw_square ($t0, $t1, $t2)     # draw the bottom-half of the mouth's capsule
     
     load_ra ()              # fetch the original return address
     jr $ra                  # return back to main
