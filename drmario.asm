@@ -216,21 +216,22 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
     move $a1, %y                 # move the y-coordinate into a safe register to avoid overwriting
     move $a2, %direction         # move the direction into a safe register to avoid overwriting
     
-    addi $sp, $sp, -16      # allocate space for four (more) registers on the stack
+    addi $sp, $sp, -20      # allocate space for five (more) registers on the stack
     sw $t0, 16($sp)         # $t0 is used in this macro, save it to the stack to avoid overwriting
     sw $t1, 12($sp)         # $t1 is used in this macro, save it to the stack to avoid overwriting
     sw $t2, 8($sp)          # $t2 is used in this macro, save it to the stack to avoid overwriting
     sw $t3, 4($sp)          # $t3 is used in this macro, save it to the stack to avoid overwriting
+    sw $t4, 0($sp)          # $t3 is used in this macro, save it to the stack to avoid overwriting
     
     move $t0, $a0            # load x-coordinate into function argument register
     move $t1, $a1            # load y-coordinate into function argument register
-    move $t2, $a2    # load the direction into a temporary register to avoid being overwritten
-    
-    lw $t3, black                   # load the colour black
-    draw_square ($t0, $t1, $t3)     # colour the original square at (x,y) black
+    move $t2, $a2            # load the direction into a temporary register to avoid being overwritten
     
     get_pixel ($a0, $a1)        # fetch the address corresponding to the coordinate
     lw $t3, 0($v0)              # fetch the colour of the coordinate
+    
+    lw $t4, black                   # load the colour black
+    draw_square ($t0, $t1, $t4)     # colour the original square at (x,y) black
     
     beq $t2, 1, move_square_left        # if direction specifies left
     beq $t2, 2, move_square_right       # if direction specifies right
@@ -247,17 +248,18 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
         subi $t1, $t1, 2                    # shift the y-coordinate up by two units
         j move_square_done                  # completed, jump back
     move_square_down:
-        addi $a1, $a1, 2                    # shift the y-coordinate down by two units
+        addi $t1, $t1, 2                    # shift the y-coordinate down by two units
         j move_square_done                  # completed, jump back
    
     move_square_done:
         draw_square ($t0, $t1, $t3)         # draw the square at the new coordinates with the original colour
         
-        lw $t3, 0($sp)       # restore the original $t3 value
-        lw $t2, 4($sp)       # restore the original $t2 value
-        lw $t1, 8($sp)       # restore the original $t1 value
-        lw $t0, 12($sp)      # restore the original $t0 value
-        addi $sp, $sp, 16    # free space used by the four registers
+        lw $t4, 0($sp)       # restore the original $t4 value
+        lw $t3, 4($sp)       # restore the original $t3 value
+        lw $t2, 8($sp)       # restore the original $t2 value
+        lw $t1, 12($sp)       # restore the original $t1 value
+        lw $t0, 16($sp)      # restore the original $t0 value
+        addi $sp, $sp, 20    # free space used by the four registers
 .end_macro
 
 .macro move_capsule (%direction)
@@ -284,14 +286,14 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
     move_horizontal_capsule:
         beq $t2, 1, move_horizontal_capsule_left    # if moving left, move the capsule's first half first
         
-        addi $t0, $s0, 4                        # the second half is to the right of the first half
+        addi $t0, $s0, 2                        # the second half is to the right of the first half
         move_square ($t0, $s1, $t2)             # move the second half first to avoid being overwritten
         move_square ($s0, $s1, $t2)             # move first half second, avoids overwriting the second half
         j move_capsule_done                     # return back to main
         
     move_horizontal_capsule_left: 
         move_square ($s0, $s1, $t2)             # move the first half first to avoid being overwritten
-        addi $t0, $s0, 4                        # the second half is to the right of the first half
+        addi $t0, $s0, 2                        # the second half is to the right of the first half
         move_square ($t0, $s1, $t2)             # move the second half second, avoids overwriting the first half
         j move_capsule_done                     # return back to main
  
@@ -311,17 +313,17 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
     sw $t0, 0($sp)          # $t0 is used in this macro, save it to the stack to avoid overwriting 
     
     random_colour ()                # generate a random colour, stored in $v1
-    move $s3, $v0                   # set the first half's colour
-    li $s0, 17                      # set the x-coordinate
-    li $s1, 12                      # set the y-coordinate
+    move $s3, $v1                   # set the first half's colour
+    li $s0, 16                      # set the x-coordinate
+    li $s1, 16                      # set the y-coordinate
     draw_square ($s0, $s1, $s3)     # draw the top-half of the capsule
     
     random_colour ()                # generate a random colour, stored in $v1
-    move $s4, $v0                   # set the second half's colour
-    li $t0, 14                      # set the y-coordinate
-    draw_square ($s0, $t0, $s4)     # draw the bottom-half of the capsule
+    move $s4, $v1                   # set the second half's colour
+    li $t0, 18                      # set the x-coordinate
+    draw_square ($t0, $s1, $s4)     # draw the bottom-half of the capsule
     
-    li $s2, 1                       # sets 'down = 1' as orientation in $v1
+    li $s2, 2                       # sets 'horizontal = 2' as orientation in $v1
     
     lw $t0, 0($sp)       # restore the original $t0 value
     addi $sp, $sp, 4     # free space used by the three registers
@@ -373,15 +375,15 @@ main:
 
 game_loop:
     # 1a. Check if key has been pressed
-    lw $t0, ADDR_KBRD               # load the base address for the keyboard
-    lw $t1, 0($t0)                  # load the first word from the keyboard: flag
-    beq $t1, 0, game_loop_done      # if a word was not detected, skip handling of the input
+    lw $t0, ADDR_KBRD                   # load the base address for the keyboard
+    lw $t1, 0($t0)                      # load the first word from the keyboard: flag
+    beq $t1, 0, finalize_game_loop      # if a word was not detected, skip handling of the input
     
     # 1b. Check which key has been pressed
     keyboard_input:
         lw $t0, 4($t0)              # load in the second word from the keyboard: actual input value
         beq $t0, 0x71, Q_pressed    # user pressed Q: quit the program
-    
+        
         # 2a. Check for collisions
             # ... if moves on, assumes no collision was found
         
@@ -391,7 +393,14 @@ game_loop:
         beq $t0, 0x73, S_pressed    # user pressed S: move capsule down
         beq $t0, 0x64, D_pressed    # user pressed D: move capsule to the right
         
-    game_loop_done:
+    finalize_game_loop:
+    
+    
+    
+        # check for four (or more in a row) and remove them
+    
+
+
     	# 4. Sleep
     	li $v0, 32         # load the syscall code for delay
     	li $a0, 15         # specify a delay of 15 ms (60 updates/second)
@@ -399,25 +408,27 @@ game_loop:
     
         # 5. Go back to Step 1
         j game_loop
+        
+        
+        
+        
     
 W_pressed:
     # assuming no collision will occur, rotate the capsule 90 degrees clockwise
     
-    beq $s2, 1, rotate_horizontally         # if the capsule is vertical, rotate to horizontal
-    beq $s2, 2, rotate_vertically           # if the capsule is horizontal, rotate to vertical
+    beq $s2, 1, rotate_vertical             # if the capsule is vertical, rotate to horizontal
+    beq $s2, 2, rotate_horizontal           # if the capsule is horizontal, rotate to vertical
     
-    rotate_vertically:
-        addi $t0, $s0, 2                    # the second half of the capsule is to the right of the first half
+    rotate_horizontal:
         li $t2, 4                           # set the direction to move to down
-        move_square ($t0, $s1, $t2)         # move the capsule's second half down
-        addi $t1, $s1, 2                    # the second half is now below its original position
+        move_square ($s0, $s1, $t2)         # move the first half of the capsule down
+        addi $t0, $s0, 2                    # the second half is to the right of the original position
         li $t2, 1                           # set the direction to move to left
-        move_square($t0, $t1, $t2)          # move the capsule's second half left
+        move_square ($t0, $s1, $t2)         # move the second half of teh capsule left
         li $s2, 1                           # set the capsule's orientation to vertical
         j w_pressed_done
     
-    rotate_horizontally:
-        # move right then up
+    rotate_vertical:
         addi $t1, $s1, 2                    # the second half of the capsule is below the first half
         li $t2, 2                           # set the direction to move to right
         move_square ($s0, $t1, $t2)         # move the capsule's second half right
@@ -427,22 +438,25 @@ W_pressed:
         li $s2, 2                           # set the capsule's orientation to horizontal
         j w_pressed_done                    # return back to main
         
-    w_pressed_done: jr $ra                  # return to the original address upon completion
+    w_pressed_done: j finalize_game_loop    # return back to the game loop
 
 A_pressed:
     # assuming no collision will occur, move the capsule to the left
-    move_capsule (1)      # move the capsule left
-    jr $ra                          # return to main
+    move_capsule (1)            # move the capsule left
+    subi $s0, $s0, 2            # update the x-coordinate
+    j finalize_game_loop        # return back to the game loop
 
 S_pressed:
     # assuming no collisions will occur, move the capsule down
-    move_capsule (4)      # move the capsule down
-    jr $ra                          # return to main
+    move_capsule (4)            # move the capsule down
+    addi $s1, $s1, 2            # update the y-coordinate
+    j finalize_game_loop        # return back to the game loop
 
 D_pressed:
     # assuming no collision will occur, move the capsule to the right
-    move_capsule (2)      # move the capsue right
-    jr $ra                          # return to main
+    move_capsule (2)            # move the capsue right
+    addi $s0, $s0, 2            # update the x-coordinate
+    j finalize_game_loop        # return back to the game loop
 
 Q_pressed:
     li $v0, 10          # load the syscall code for quitting the program
@@ -517,11 +531,12 @@ draw_scene:
     
     # draw the initial two coloured capsules
     random_colour ()                # generate a random colour, stored in $v1
-    move $t2, $v0                   # extract the first half's colour
+    move $t2, $v1                   # extract the first half's colour
     li $t0, 40                      # set the x-coordinate
     li $t1, 20                      # set the y-coordinate
     draw_square ($t0, $t1, $t2)     # draw the top-half of the mouth's capsule
     random_colour ()                # generate a random colour, stored in $v1
+    move $t2, $v1                   # extract the second half's colour
     li $t0, 40                      # set the x-coordinate
     li $t1, 22                      # set the y-coordinate
     draw_square ($t0, $t1, $t2)     # draw the bottom-half of the mouth's capsule
