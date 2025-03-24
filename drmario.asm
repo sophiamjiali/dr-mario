@@ -2,7 +2,7 @@
 # This file contains our implementation of Dr Mario.
 #
 # Student 1: Sophia Li, 1009009314
-# Student 2: Name, Student Number (if applicable)
+# Student 2: Adam Lambermon, Student Number (if applicable)
 #
 # We assert that the code submitted here is entirely our own 
 # creation, and will indicate otherwise when it is not.
@@ -39,7 +39,11 @@ row: .word 0x00000100
 step: .word 0x0000004
 
 # allocate a block to format the bitmap in memory properly
+<<<<<<< Updated upstream
 spacer: .space 4
+=======
+spacer: .space 16
+>>>>>>> Stashed changes
 
 # allocate 8 x 16 = 128 words (512 bytes) representing each pixel of the bitmap
 bitmap: .space 512
@@ -146,6 +150,7 @@ main:
 game_loop:
     # 1a. Check if key has been pressed
     # 1b. Check which key has been pressed
+<<<<<<< Updated upstream
     # 2a. Check for collisions
 	# 2b. Update locations (capsules)
 	# 3. Draw the screen
@@ -155,7 +160,198 @@ game_loop:
     j game_loop
 
 
+=======
+    keyboard_input:
+        lw $t0, 4($t0)              # load in the second word from the keyboard: actual input value
+        beq $t0, 0x71, Q_pressed    # user pressed Q: quit the program
+        
+    	# 2a. Check for collisions, 2b. Update locations (capsules), # 3. Draw the screen
+    	beq $t0, 0x77, W_pressed    # user pressed W: rotate capsule 90 degrees anticlockwise
+        beq $t0, 0x61, A_pressed    # user pressed A: move capsule to the left
+        beq $t0, 0x73, S_pressed    # user pressed S: move capsule down
+        beq $t0, 0x64, D_pressed    # user pressed D: move capsule to the right
+        
+    finalize_game_loop:
+    
+        # check for four or more in a row and remove them, updating the display
+        # check_matches ()
 
+    	# 4. Sleep
+    	li $v0, 32         # load the syscall code for delay
+    	li $a0, 15         # specify a delay of 15 ms (60 updates/second)
+    	syscall            # invoke the syscall
+    
+        # 5. Go back to Step 1
+        j game_loop
+
+check_move:
+    Q_pressed:
+        li $v0, 10          # load the syscall code for quitting the program
+       syscall              # invoke the syscall
+       
+    W_pressed:
+        # collision check for a potential 90 degree rotation of the current capsule
+        
+        lw $t3, black                   # fetch the colour black
+        
+        beq $s2, 1, W_vertical          # check for a vertical capsule
+        beq $s2, 2, W_horizontal        # check for a horizontal capsule
+        
+        W_vertical:
+            addi $t0, $s0, 2            # check the pixel to the right of the first half
+            get_pixel ($t0, $s1)        # fetch the address of the pixel
+            lw $t2, 0($v0)              # fetch the colour of the pixel
+            beq $t3, $t2, move_W        # if no pixel to the right, then no collision
+            subi $t0, $s0, 2            # else, check the pixel to the right of the first half
+            get_pixel ($t0, $s1)        # fetch the address of the pixel
+            lw $t2, 0($v0)              # fetch the colour of the pixel
+            bne $t3, $t2, move_done     # if there is a collision, check if the game is over
+            move_capsule (1)            # else, move the capsule left
+            j move_W                    # then rotate the capsule
+            
+        W_horizontal:
+            addi $t1, $s1, 2            # check the pixel below the first half
+            get_pixel ($s0, $t1)        # fetch the address of the pixel
+            lw $t2, 0($v0)              # fetch the colour of the pixel
+            beq $t3, $t2, move_W        # if no pixel to the right, then no collision
+            j move_done                 # else, check if the game is over
+    
+    A_pressed:
+        # collision check for a potential movement left of the current capsule
+        
+        lw $t2, black                           # fetch the colour black
+        
+        subi $t0, $s0, 2                        # check the pixel left of the first half
+        get_pixel ($t0, $s1)                    # fetch the address of the pixel
+        lw $t3, 0($v0)                          # fetch the colour of the pixel
+        bne $t3, $t2, move_done                 # if first half collides, return to game loop
+    
+        beq $s2, 1, A_vertical                  # if vertical, must check pixel left of the second half
+        beq $s2, 2, move_A                      # if horizontal, collision check is complete
+        
+        A_vertical:
+            addi $t1, $s1, 2                        # check the pixel left of the second half
+            get_pixel ($t0, $t1)                    # fetch the address of the pixel
+            lw $t3, 0($v0)                          # fetch the colour of the pixel
+            beq $t3, $t2, move_A                    # if no pixel to the left, then no collision
+            j move_done                             # else, move is done, check if the game is over
+    
+    S_pressed:
+        # collision check for a potential movement down of the current capsule
+        
+        lw $t2, black                           # fetch the colour black
+        
+        beq $s2, 1, S_vertical                  # check for a vertical capsule
+        beq $s2, 2, S_horizontal                # check for a horizontal capsule
+        
+        S_vertical:
+            addi $t1, $s1, 4                    # check the pixel below the second half
+            get_pixel ($s0, $t1)                # fetch the address of the pixel
+            lw $t3, 0($v0)                      # fetch the colour of the pixel
+            beq $t3, $t2, move_S                # if no pixel below, then no collision
+            j move_done                         # else, move is done, check if the game is over
+            
+        S_horizontal:
+            addi $t1, $s1, 2                    # check the pixel below the first half
+            get_pixel ($s0, $t1)                # fetch the address of the pixel
+            lw $t3, 0($v0)                      # fetch the colour of the pixel
+            bne $t3, $t2, move_done             # if first half collides, return to game loop
+            addi $t0, $s0, 2                    # check the pixel below the second half
+            get_pixel ($t0, $t1)                # fetch the address of the pixel
+            lw $t3, 0($v0)                      # fetch the colour of the pixel
+            beq $t3, $t2, move_S                # if no pixel below, then no collision
+            j move_done                         # else, move is done, check if the game is over
+>>>>>>> Stashed changes
+
+    D_pressed:
+        # collision check for a potential movement right of the current capsule
+        
+        lw $t2, black                           # fetch the colour black
+        
+        beq $s2, 1, D_vertical                  # if vertical, must check pixel right of the second half
+        beq $s2, 2, D_horizontal                # if horizontal, collision check is complete
+            
+        D_vertical:
+            addi $t0, $s0, 2                        # check the pixel right of the first half
+            get_pixel ($t0, $s1)                    # fetch the address of the pixel
+            lw $t3, 0($v0)                          # fetch the colour of the pixel
+            bne $t3, $t2, move_done                 # if first half collides, return to game loop
+            subi $t1, $s1, 2                        # check the pixel right of the second half
+            get_pixel ($t0, $t1)                    # fetch the address of the pixel
+            lw $t3, 0($v0)                          # fetch the colour of the pixel
+            beq $t3, $t2, move_D                    # if no pixel to the left, then no collision
+            j move_done                             # else, move is done, check if the game is over
+            
+        D_horizontal:
+            addi $t0, $s0, 4                        # check the pixel right of the second half
+            get_pixel ($t0, $s1)                    # fetch the address of the pixel
+            lw $t3, 0($v0)                          # fetch the colour of the pixel
+            beq $t3, $t2, move_D                    # if first half collides, return to game 
+            j move_done                             # else, move is done, check if the game is over
+    
+    
+move_capsule:
+    move_W:
+        # assuming no collision will occur, rotate the capsule 90 degrees clockwise
+        
+        beq $s2, 1, rotate_vertical             # if the capsule is vertical, rotate to horizontal
+        beq $s2, 2, rotate_horizontal           # if the capsule is horizontal, rotate to vertical
+        
+        rotate_horizontal:
+            li $t2, 4                           # set the direction to move to down
+            move_square ($s0, $s1, $t2)         # move the first half of the capsule down
+            addi $t0, $s0, 2                    # the second half is to the right of the original position
+            li $t2, 1                           # set the direction to move to left
+            move_square ($t0, $s1, $t2)         # move the second half of teh capsule left
+            li $s2, 1                           # set the capsule's orientation to vertical
+            j w_pressed_done
+        
+        rotate_vertical:
+            addi $t1, $s1, 2                    # the second half of the capsule is below the first half
+            li $t2, 2                           # set the direction to move to right
+            move_square ($s0, $t1, $t2)         # move the capsule's second half right
+            addi $t0, $s0, 2                    # the second half is now to the right of its original position
+            li $t2, 3                           # set the direction to move to up
+            move_square ($t0, $t1, $t2)         # move the capsule's second half up
+            li $s2, 2                           # set the capsule's orientation to horizontal
+            j w_pressed_done                    # return back to main
+            
+        w_pressed_done: j finalize_game_loop    # return back to the game loop
+    
+    move_A:
+        # assuming no collision will occur, move the capsule to the left
+        move_capsule (1)            # move the capsule left
+        subi $s0, $s0, 2            # update the x-coordinate
+        j finalize_game_loop        # return back to the game loop
+    
+    move_S:
+        # assuming no collisions will occur, move the capsule down
+        move_capsule (4)            # move the capsule down
+        addi $s1, $s1, 2            # update the y-coordinate
+        j finalize_game_loop        # return back to the game loop
+    
+    move_D:
+        # assuming no collision will occur, move the capsule to the right
+        move_capsule (2)            # move the capsue right
+        addi $s0, $s0, 2            # update the x-coordinate
+        j finalize_game_loop        # return back to the game loop
+    
+    
+move_done:
+    # called upon a move finding a collision, check if game is over, else generate new capsule
+    # and return to the game loop
+    
+    li $t0, 16              # load the starting x-coordinate of the capsule
+    li $t1, 16              # load the starting y-coordinate of the capsule
+    
+    bne $t0, $s0, start_new_round       # if the x-coordinate doesn't match, 
+    bne $t1, $s1, start_new_round       # if the y-coordinate doesn't match
+    
+    j Q_pressed             # capsule collided at the start position, quit the game
+    
+    start_new_round:
+        new_capsule ()              # else, generate a new capsule and start a new round
+        j finalize_game_loop        # return to the game loop
 
 draw_scene:
     # draws the initial static scene
