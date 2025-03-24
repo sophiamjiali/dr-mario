@@ -2,7 +2,7 @@
 # This file contains our implementation of Dr Mario.
 #
 # Student 1: Sophia Li, 1009009314
-# Student 2: Name, Student Number (if applicable)
+# Student 2: Adam Lambermon, Student Number (if applicable)
 #
 # We assert that the code submitted here is entirely our own 
 # creation, and will indicate otherwise when it is not.
@@ -64,7 +64,7 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
 # $s4: colour of second half
 # $s5:  
 # $s6: 
-# $s7: 
+# $s7: minimum consequtive number of blocks that are a match - 1
 
 ##############################################################################
 # Code
@@ -378,13 +378,9 @@ game_loop:
         
     finalize_game_loop:
     
+        # jal check_rows            # checks for any matching blocks in rows and removes them
+        # jal check_columns         # checks for any matching blocks in columns and removes them
     
-    
-        # check for four or more in a row and remove them, updating the display
-        # check_matches ()
-    
-
-
     	# 4. Sleep
     	li $v0, 32         # load the syscall code for delay
     	li $a0, 15         # specify a delay of 15 ms (60 updates/second)
@@ -395,7 +391,98 @@ game_loop:
         
         
         
+check_rows:
+    # checks for any matching blocks in each row and removes them
+    
+    # $t0: x-coordinate
+    # $t1: y-coordinate
+    # $t2: black
+    # $t3: current colour
+    # $t4: max x
+    # $t5: max y
+    # $t6: num consequtive
+    # $t7: current consequtive colour
+    # $t8: start of colour x-coordinate
+    # $t9: start of colour y-coordinate
+    # $s7: min num of blocks per row - 1
+    
+    save_ra ()              # save the return address
+    
+    lw $t2, black           # load the colour black
+    li $t4, 30              # initialize the maximum x-coordinate + 2 (don't clip last pixel)
+    li $t5, 57              # initialize the maximum y-coordinate + 1
+    li $s7, 3               # the minimum number of blocks per row that count as a match - 1
+    
+    start_row_loop:
+        li $t6, 0               # initialize the current number of consequtive blocks to zero
+        lw $t7, black           # initialize the current consequtive colour to black
+    
+        li $t1, 18               # initialize y-coordinate for-loop index to start of playing area
+        j for_y_rows             # jumps to the first for-loop over y-coordinates
         
+        for_y_rows:
+            bgt $t1, $t5, done_all_rows         # if looped through all rows, finish
+            li $t0, 6                           # initialize x-coordinate for-loop index to start of playing area
+            j for_x_rows                        # jumps to the second for-loop over x-coordinates
+            
+            for_x_rows:
+                bgt $t0, $t4, done_row          # once looped to end of row, check if any matches and iterate to next
+                
+                get_pixel ($t0, $t1)            # fetch the address of the current pixel
+                lw $t3, 0($v0)                  # extract the colour of the pixel
+                beq $t2, $t3, next_x_row        # if the current block is empty, skip it
+                
+                bne $t3, $t7, diff_colour       # if current block is not the same colour as the current consequtive
+                
+                addi $t6, $t6, 1                # increment the number of consequtive blocks
+                j next_x_row                    # continue the for-loop
+                
+                diff_colour:
+                    bgt $t6, $s7, rmv_row_match     # if at least four consequtive, remove them and reset if necessary
+                    
+                    li $t6, 1                       # set the current number of consequtive blocks to one
+                    move $t7, $t3                   # set the current consequtive colour to the current pixel
+                    move $t8, $t0                   # reset the current consequtive block's x-coordinate
+                    move $t9, $t1                   # reset the current consequtive block's y-coordinate
+                    j next_x_row                    # continue the for-loop
+                
+                next_x_row:
+                    addi $t0, $t0, 2                # increment to the next block (in intervals of two)
+                    j for_x_rows                    # continue the for-loop
+                done_row:
+                    addi $t1, $t1, 2                # increment to the next row (in intervals of two)
+                    j for_y_rows
+                    
+            rmv_row_match:
+                # removes the maximum consequtive line of blocks
+                
+                # NOTE: currently simply removes the consequtive blocks, doesn't yet handle falling half capsules
+                
+                rmv_block:
+                    bgt $t8, $t0, start_row_loop        # once all blocks have been removed, restart the checking process
+                    
+                    get_pixel ($t8, $t9)                # fetch the address of the current colour
+                    sw $t2, 0($v0)                      # colour the pixel black
+                    addi $t8, $t8, 2                    # increment to the next block
+                    j rmv_block                         # continue the for-loop
+                    
+    done_all_rows:
+        load_ra ()          # load the original return address
+        jr $ra              # return back to the next original line of code
+        
+            
+            
+            
+    
+
+check_columns:
+        
+        
+        
+        
+        
+        
+
     
 check_move:
     Q_pressed:
@@ -498,7 +585,7 @@ check_move:
             addi $t0, $s0, 4                        # check the pixel right of the second half
             get_pixel ($t0, $s1)                    # fetch the address of the pixel
             lw $t3, 0($v0)                          # fetch the colour of the pixel
-            beq $t3, $t2, move_D                    # if first half collides, return to game 
+            beq $t3, $t2, move_D                    # no collision, move right
             j move_done                             # else, move is done, check if the game is over
     
     
@@ -555,8 +642,8 @@ move_done:
     
     lw $t2, black                           # fetch the colour black
         
-    beq $s2, 1, S_vertical                  # check for a vertical capsule
-    beq $s2, 2, S_horizontal                # check for a horizontal capsule
+    beq $s2, 1, round_vertical                  # check for a vertical capsule
+    beq $s2, 2, round_horizontal                # check for a horizontal capsule
     
     round_vertical:
         addi $t1, $s1, 4                        # check the pixel below the second half
@@ -656,7 +743,7 @@ draw_scene:
     addi $t0, $gp, 2144
     jal paint_line
     
-    # draw the initial two coloured capsules
+    # draw the initial two coloured capsule
     random_colour ()                # generate a random colour, stored in $v1
     move $t2, $v1                   # extract the first half's colour
     li $t0, 40                      # set the x-coordinate
