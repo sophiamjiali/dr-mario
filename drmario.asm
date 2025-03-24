@@ -43,7 +43,11 @@ step: .word 0x0000004
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 spacer: .space 4
+=======
+spacer: .space 16
+>>>>>>> Stashed changes
 =======
 spacer: .space 16
 >>>>>>> Stashed changes
@@ -276,6 +280,9 @@ check_move:
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
