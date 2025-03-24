@@ -41,7 +41,11 @@ step: .word 0x0000004
 # allocate a block to format the bitmap in memory properly
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 spacer: .space 4
+=======
+spacer: .space 16
+>>>>>>> Stashed changes
 =======
 spacer: .space 16
 >>>>>>> Stashed changes
@@ -266,6 +270,9 @@ check_move:
             beq $t3, $t2, move_S                # if no pixel below, then no collision
             j move_done                         # else, move is done, check if the game is over
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
