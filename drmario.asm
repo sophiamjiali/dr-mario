@@ -39,10 +39,9 @@ blue: .word 0x0000ff
 colour_table: .word 0xff0000, 0x00ff00, 0x0000ff
 
 # formats how game memory appears in memory, organizational only
-spacer: .space 20
+spacer: .space 24
 
 # store the playing area in memory, playing field of 24 x 40
-GAME_MEMORY_ADDR: .word 0x10009220
 GAME_MEMORY: .space 3840
 
 ##############################################################################
@@ -53,7 +52,6 @@ GAME_MEMORY: .space 3840
 	
 .macro set_defaults ()
     # define defaults here
-    
     li $s6, 2       # number of pixels in a block
     li $s7, 3       # minimum consequtive blocks that count as a match - 1
 .end_macro
@@ -133,7 +131,7 @@ GAME_MEMORY: .space 3840
     
     addi $sp, $sp, -20           # allocate space for five (more) registers on the stack
     sw $t0, 16($sp)              # $t0 is used in this macro, save it to the stack to avoid overwriting
-    sw $t1, 12($sp)              # $t1 is used in this macro, save it to the stack to avoid overwriting
+    sw $t1, 12($sp)               # $t1 is used in this macro, save it to the stack to avoid overwriting
     sw $t2, 8($sp)               # $t2 is used in this macro, save it to the stack to avoid overwriting
     sw $t3, 4($sp)               # $t3 is used in this macro, save it to the stack to avoid overwriting
     sw $t4, 0($sp)               # $t3 is used in this macro, save it to the stack to avoid overwriting
@@ -142,10 +140,10 @@ GAME_MEMORY: .space 3840
     move $t1, $a1                # load y-coordinate into function argument register
     move $t2, $a2                # load the direction into a temporary register to avoid being overwritten
     
+    lw $t4, black                # load the colour black
     get_pixel ($t0, $t1)         # fetch the address corresponding to the coordinate
     lw $t3, 0($v0)               # fetch the colour of the coordinate
     
-    lw $t4, black                   # load the colour black
     draw_square ($t0, $t1, $t4)     # colour the original square at (x,y) black
     
     beq $t2, 1, shift_left        # if direction specifies left
@@ -169,12 +167,12 @@ GAME_MEMORY: .space 3840
     move_done:
         draw_square ($t0, $t1, $t3)         # draw the square at the new coordinates with the original colour
         
-    lw $t4, 0($sp)       # restore the original $t4 value
-    lw $t3, 4($sp)       # restore the original $t3 value
-    lw $t2, 8($sp)       # restore the original $t2 value
-    lw $t1, 12($sp)       # restore the original $t1 value
-    lw $t0, 16($sp)      # restore the original $t0 value
-    addi $sp, $sp, 20    # free space used by the four registers
+        lw $t3, 0($sp)       # restore the original $t4 value
+        lw $t3, 4($sp)       # restore the original $t3 value
+        lw $t2, 8($sp)       # restore the original $t2 value
+        lw $t1, 12($sp)      # restore the original $t1 value
+        lw $t0, 16($sp)      # restore the original $t0 value
+        addi $sp, $sp, 20    # free space used by the four registers
 .end_macro
 
 .macro draw_square (%x, %y, %colour)
@@ -184,35 +182,32 @@ GAME_MEMORY: .space 3840
     move $a1, %y                    # move the y-coordinate into a safe register to avoid overwriting
     move $a2, %colour               # move the direction into a safe register to avoid overwriting
     
-    addi $sp, $sp, -12              # allocate space for three (more) registers on the stack
-    sw $t0, 8($sp)                  # $t0 is used in this macro, save it to the stack to avoid overwriting
-    sw $t1, 4($sp)                  # $t1 is used in this macro, save it to the stack to avoid overwriting
-    sw $t2, 0($sp)                  # $t2 is used in this macro, save it to the stack to avoid overwriting
+    addi $sp, $sp, -8       # allocate space for two (more) register on the stack
+    sw $t0, 4($sp)          # $t0 is used in this macro, save it to the stack to avoid overwriting  
+    sw $t1, 0($sp)          # $t1 is used in this macro, save it to the stack to avoid overwriting  
     
-    move $t0, $a0                   # load x-coordinate into function argument register
-    move $t1, $a1                   # load y-coordinate into function argument register
-    move $t2, $a2                   # load colour into function argument register
+    move $t0, $a0           # initialize the x-coordinate
+    move $t1, $a1           # initialize the y-coordinate  
     
-    draw_pixel ($t0, $t1, $t2)      # draw the first pixel
+    draw_pixel ($t0, $t1, $a2)      # draw the first pixel
     addi $t1, $t1, 1                # move the y-coordinate down by one
-    draw_pixel ($t0, $t1, $t2)      # draw the second pixel
+    draw_pixel ($t0, $t1, $a2)      # draw the second pixel
     addi $t0, $t0, 1                # move the x-coordinate over by one
-    draw_pixel ($t0, $t1, $t2)      # draw the third pixel
+    draw_pixel ($t0, $t1, $a2)      # draw the third pixel
     subi $t1, $t1, 1                # move the y-coordinate up by one
-    draw_pixel ($t0, $t1, $t2)      # draw the fourth pixel
+    draw_pixel ($t0, $t1, $a2)      # draw the fourth pixel
     
-    lw $t2, 0($sp)       # restore the original $t2 value
-    lw $t1, 4($sp)       # restore the original $t1 value
-    lw $t0, 8($sp)       # restore the original $t0 value
-    addi $sp, $sp, 12    # free space used by the three registers
+    lw $t1, 0($sp)       # restore the original value of $t1
+    lw $t0, 4($sp)       # restore the original value of $t0
+    addi $sp, $sp, 8     # free space used by the four registers
 .end_macro
 
 .macro draw_pixel (%x, %y, %colour)
     # draws a pixel of the given colour at the coordinate specified by (x,y)
     
     get_pixel (%x, %y)    # fetch the bitmap address corresponding to (x,y)
-    move $a0, %colour     # move the colour into a function argument register
-    sw $a0, 0($v0)        # save the specified colour at the given address
+    move $a2, %colour     # move the colour into a function argument register
+    sw $a2, 0($v0)        # save the specified colour at the given address
 .end_macro
 
 .macro get_pixel (%x, %y)
@@ -264,6 +259,99 @@ GAME_MEMORY: .space 3840
     addi $sp, $sp, 16    # free space used by the four registers
 .end_macro
 
+.macro save_info ()
+    # saves the information about the current capsule (round just finished) into game memory
+    
+    addi $sp, $sp, -8           # allocate space for two (more) registers on the stack
+    sw $t0, 4($sp)              # $t0 is used in this macro, save it to othe stack to avoid overwriting
+    sw $t1, 0($sp)              # $t1 is used in this macro, save it to othe stack to avoid overwriting
+    
+    get_memory_pixel ($s0, $s1)         # fetch the address of the current pixel in game memory
+    li $t1, 1                           # load the block type code for capsules
+    sb $t1, 0($v0)                      # save the byte code to the first position in the address
+    
+    beq $s2, 1, save_info_vertical      # if the capsule is vertical
+    beq $s2, 2, save_info_horizontal    # if the capsule is horizontal
+    
+    save_info_vertical:
+        li $t1, 4                       # load the orientation direction code for down
+        sb $t1, 1($v0)                  # save the byte code to the second position in the address
+        addi $t0, $s1, 2                # fetch the y-coordinate of the second half
+        get_memory_pixel ($s0, $t0)     # fetch the address of the next capsule half
+        li $t1, 1                       # load the block type code for capsule
+        sb $t1, 0($v0)                  # save the byte code to the first position in the address
+        li $t2, 3                       # load the orientation direction code for up
+        sb $t2, 1($v0)                  # save the byte code to the second position in the address
+        j save_info_done                # return to the original calling
+        
+    save_info_horizontal:
+        li $t1, 2                       # load the orientation direction code for right
+        sb $t1, 1($v0)                  # save the bye code to the second position in the address
+        addi $t0, $s0, 2                # fetch the x-coordinate of the second half
+        get_memory_pixel($t0, $s1)             # fetch the address of the nextca capsule half
+        li $t1, 1                       # load the block type code for capsule
+        sb $t1, 0($v0)                  # save the byte code to the first position in the address
+        li $t2, 1                       # load the orientation drection code for left
+        sb $t2, 1($v0)                  # save the byte code to the second positio nin the address
+        j save_info_done                # return to the original calling
+        
+    save_info_done:
+        lw $t1, 0($sp)       # restore the original $t1 value
+        lw $t0, 4($sp)       # restore the original $t0 value
+        addi $sp, $sp, 8    # free space used by the two registers    
+.end_macro
+
+.macro get_info (%x, %y)
+    # fetches information about the pixel at the (x,y) coordinates; $v0 holds block type (1 is capsule, 2 is virus),
+    # $v1 holds connection direction (0 if not connected (or virus), 1-4 represent left right up down)
+    
+    move $a0, %x                        # load x-coordinate into a function argument register
+    move $a1, %y                        # load y-coordinate into a function argumnet register
+    
+    get_memory_pixel ($a0, $a1)         # fetch the address of the pixel in game memory
+    move $t0, 0($v0)                    # extract the address, $v0 is overwritten later
+    lb $v0, 0($t0)                      # extract the first byte, holding block type
+    lb $v1, 1($t0)                      # extract the second byte, holding connection direction
+.end_macro
+
+.macro remove_info (%x, %y)
+    # removes the information about a pixel at the (x,y) coordinates from the game memory
+    
+    get_memory_pixel (%x, %y)   # fetch the address of the pixel in memory
+    sb $zero, 0($v0)            # save zero to each byte
+    sb $zero, 1($v0)            # ,,,
+    
+.end_macro
+
+.macro get_memory_pixel (%x, %y)
+    # give (x,y) coordinates on the display, return the corresponding address in game memory
+    
+    addi $sp, $sp, -8       # allocate space for two (more) registers on the stack
+    sw $t0, 4($sp)          # $t0 is used in this macro, save it to the stack to avoid overwriting
+    sw $t1, 0($sp)          # $t1 is used in this macro, save it to the stack to avoid overwriting
+    
+    move $a0, %x            # load x-coordinate into the first function argument register
+    move $a1, %y            # load y-coordinate into the second function argument register
+    li $t0, 96              # load the number of bytes to offset to the next row
+    li $t1, 4               # load the number of bytes to offset to the next pixel
+    
+    subi $a0, $a0, 6        # subtract the playing area offset from the x-coordinate
+    subi $a1, $a1, 18       # subtract the playing area offset from the y-coordinate
+    
+    mul $t1, $t1, $a0       # calculate the x-offset of the pixel (relative to the left)
+    mul $t0, $t0, $a1       # calculate the y-offset of the pixel (relative to the top)
+    add $t0, $t0, $t1       # calculate the overall byte offset
+    
+    la $t1, GAME_MEMORY     # fetch the address of the game memory
+    
+    add $t0, $t0, $t1       # calculate the address relative to the game memory address offset
+    move $v0, $t0           # save the address
+    
+    lw $t1, 0($sp)          # restore the original $t1 value
+    lw $t0, 4($sp)          # restore the original $t0 value
+    addi $sp, $sp, 8        # free space used by the two registers
+.end_macro
+
 .macro save_ra ()
     # saves the current return address in $ra to the stack, for when there are nested helper labels
     
@@ -296,7 +384,7 @@ game_loop:
     # 1a. Check if key has been pressed
     lw $t0, ADDR_KBRD                   # load the base address for the keyboard
     lw $t1, 0($t0)                      # load the first word from the keyboard: flag
-    beq $t1, 0, finalize_game_loop      # if a word was not detected, skip handling of the input
+    beq $t1, 0, finish_game_loop        # if a word was not detected, skip handling of the input
     
     # 1b. Check which key has been pressed
     keyboard_input:
@@ -309,11 +397,13 @@ game_loop:
         beq $t0, 0x73, S_pressed    # move capsule down
         beq $t0, 0x64, D_pressed    # move capsule to the right
         
-    finalize_game_loop:
-    
-        # jal check_rows            # checks for any matching blocks in rows and removes them
+    update_playing_area:
+        jal check_rows            # checks for any matching blocks in rows and removes them
         # jal check_columns         # checks for any matching blocks in columns and removes them
     
+    finish_game_loop:
+    
+        
     	# 4. Sleep
     	li $v0, 32         # load the syscall code for delay
     	li $a0, 15         # specify a delay of 15 ms (60 updates/second)
@@ -339,85 +429,75 @@ check_rows:
     # $t9: start of colour y-coordinate
     # $s7: min num of blocks per row - 1
     
-    save_ra ()              # save the return address
+    save_ra ()          # there are nested jumps, save the original return address
     
-    lw $t2, black           # load the colour black
-    li $t4, 30              # initialize the maximum x-coordinate + 2 (don't clip last pixel)
-    li $t5, 57              # initialize the maximum y-coordinate + 1
-    li $s7, 3               # the minimum number of blocks per row that count as a match - 1
+    lw $t2, black       # load the colour black
+    li $t4, 32          # load the maximum x-coordinate + 4 (to not clip off last pixel)
+    li $t5, 58          # load the maximum y-coordinate + 2
     
-    start_row_loop:
-        li $t6, 0                # initialize the current number of consequtive blocks to zero
-        lw $t7, black            # initialize the current consequtive colour to black
-    
-        li $t1, 18               # initialize y-coordinate for-loop index to start of playing area
-        j for_y_rows             # jumps to the first for-loop over y-coordinates
+    rows_loops:
+        li $t1, 18          # initialize y-coordinate to the playing area offset
         
-        for_y_rows:
-            bgt $t1, $t5, done_all_rows         # if looped through all rows, finish
-            li $t0, 6                           # initialize x-coordinate for-loop index to start of playing area
-            j for_x_rows                        # jumps to the second for-loop over x-coordinates
+        rows_for_y:
+            bgt $t1, $t5, rows_end_loops     # if for-loop is done, row match checking is completed
+        
+            move $t7, $t2                   # set the current consequtive colour to black by default
+            li $t0, 6                       # initialize x-coordinate to the playing area offset
+            jal reset_consequtive           # reset consequtive coordinates to the current position
+        
+            rows_for_x:
+                bgt $t0, $t4, rows_next_y       # if for-loop is done, iterate to next y-coordinate in for-loop
+                
+                get_pixel ($t0, $t1)            # fetch the address of the current pixel (represents the block)
+                lw $t3, 0($v0)                  # extract its colour
+                
+                beq $t3, $t2, rows_next_x       # if its black, skip to next iteration of the for loop
+                bne $t3, $t7, rows_diff_colour  # if the current block is a different colour than the current consequtive
+                
+                addi $t6, $t6, 1                # else, same colour, increment the number of consequtive blocks
+                j rows_next_x                   # continue to the next iteration of the for-loop
             
-            for_x_rows:
-                bgt $t0, $t4, done_row          # once looped to end of row, check if any matches and iterate to next
-                
-                get_pixel ($t0, $t1)            # fetch the address of the current pixel
-                lw $t3, 0($v0)                  # extract the colour of the pixel
-                beq $t2, $t3, next_x_row        # if the current block is empty, skip it
-                
-                bne $t3, $t7, diff_colour       # if current block is not the same colour as the current consequtive
-                
-                addi $t6, $t6, 1                # increment the number of consequtive blocks
-                j next_x_row                    # continue the for-loop
-                
-                diff_colour:
-                    bgt $t6, $s7, rmv_row_match     # if at least four consequtive, remove them and reset if necessary
+                rows_diff_colour:
+                    bgt $t6, $s7, rows_remove_match     # if a valid matching is found, remove it
+                    jal reset_consequtive               # else, reset consequtive information to the current pixel
+                    move $t7, $t3                       # set the consequtive colour to the current pixel
+                    j rows_next_x                       # continue to the next iteration of the for-loop
                     
-                    jal reset_consequtive           # reset consequtive records
-                    move $t7, $t3                   # set the current consequtive colour to the current pixel
-                    j next_x_row                    # continue the for-loop
-                
-                next_x_row:
-                    add $t0, $t0, $s6                # increment to the next block (in intervals of two)
-                    j for_x_rows                    # continue the for-loop
-                    
-                done_row:
-                    add $t1, $t1, $s6                # increment to the next row (in intervals of two)
-                    jal reset_consequtive           # reset consequtive records
-                    move $t7, $t2                   # set the current consequtive colour to black
-                    j for_y_rows                    # continue the for-loop
-                    
-                reset_consequtive:
-                    li $t6, 1                       # set the current number of consequtive blocks to one
-                    move $t8, $t0                   # reset the current consequtive block's x-coordinate
-                    move $t9, $t1                   # reset the current consequtive block's y-coordinate
-                    jr $ra                          # return to what last called it
-                    
-            rmv_row_match:
-                # removes the maximum consequtive line of blocks
-                
-                # NOTE: currently simply removes the consequtive blocks, doesn't yet handle falling half capsules
-                
-                rmv_block:
-                    bgt $t8, $t0, start_row_loop        # once all blocks have been removed, restart the checking process
-                    
-                    get_pixel ($t8, $t9)                # fetch the address of the current colour
-                    draw_square ($t0, $t1, $t2)         # colour the square black
-                    add $t8, $t8, $s6                    # increment to the next block (interval of 2)
-                    j rmv_block
-                    
-                    # bound x coordinate, draw_square black
-                    
+            rows_next_x:
+                addi $t0, $t0, 2                # increment the x-coordinate
+                j rows_for_x                    # return to the for-loop
+            
+        rows_next_y:
+            addi $t1, $t1, 2                    # increment the y-coordinate
+            j rows_for_y                        # return to the for-loop
+    
+        rows_remove_match:
 
-                    
-    done_all_rows:
-        load_ra ()          # load the original return address
-        jr $ra              # return back to the next original line of code
-        
+            rows_match_loop:
+                beq $t8, $t0, rows_end_match_loop   # once all of the match is removed, move on
+                draw_square ($t8, $t1, $t2)         # remove the block at the current coordinates
+                remove_info ($t8, $t1)              # remove the block's information stored in the game memory
+                addi $t8, $t8, 2                    # increment to the next block
+                j rows_match_loop
+                
+            rows_end_match_loop:
+            
+                # call label that handles updating the rest of the playing area for falling blocks
+                
+                j rows_loops        # restart both for-loops
+            
+        reset_consequtive:
+            li $t6, 1           # set the current consequtive number of blocks to one
+            move $t8, $t0       # set the x-coordinate to the current position
+            move $t9, $t1       # set the y-coordinate to the current position
+            jr $ra              # return to the for-loops
+            
+    rows_end_loops:
+        load_ra ()          # restore the original return address
+        jr $ra              # return to the original call
             
             
             
-    
 
 check_columns:
         
@@ -564,25 +644,25 @@ valid_move:
             li $s2, 2                           # set the capsule's orientation to horizontal
             j w_pressed_done                    # return back to main
             
-        w_pressed_done: j finalize_game_loop    # return back to the game loop
+        w_pressed_done: j finish_game_loop      # return back to the game loop
     
     move_A:
         # assuming no collision will occur, move the capsule to the left
         move_capsule (1)            # move the capsule left
         sub $s0, $s0, $s6            # update the x-coordinate
-        j finalize_game_loop        # return back to the game loop
+        j finish_game_loop        # return back to the game loop
     
     move_S:
         # assuming no collisions will occur, move the capsule down
         move_capsule (4)            # move the capsule down
-        add $s1, $s1, $s6            # update the y-coordinate
-        j finalize_game_loop        # return back to the game loop
+        add $s1, $s1, $s6           # update the y-coordinate
+        j finish_game_loop          # return back to the game loop
     
     move_D:
         # assuming no collision will occur, move the capsule to the right
         move_capsule (2)            # move the capsue right
-        add $s0, $s0, $s6            # update the x-coordinate
-        j finalize_game_loop        # return back to the game loop
+        add $s0, $s0, $s6           # update the x-coordinate
+        j finish_game_loop          # return back to the game loop
     
     
 move_done:
@@ -598,7 +678,7 @@ move_done:
         addi $t1, $s1, 4                        # check the pixel below the second half
         get_pixel ($s0, $t1)                    # fetch the address of the pixel
         lw $t3, 0($v0)                          # fetch the colour of the pixel
-        beq $t3, $t2, finalize_game_loop        # if no pixel below, then no collision
+        beq $t3, $t2, finish_game_loop          # if no pixel below, then no collision
         j is_game_over                          # else, move is done, check if the game is over
         
     round_horizontal:
@@ -609,7 +689,7 @@ move_done:
         add $t0, $s0, $s6                        # check the pixel below the second half
         get_pixel ($t0, $t1)                    # fetch the address of the pixel
         lw $t3, 0($v0)                          # fetch the colour of the pixel
-        beq $t3, $t2, finalize_game_loop        # if no pixel below, then no collision
+        beq $t3, $t2, finish_game_loop          # if no pixel below, then no collision
         j is_game_over                          # else, move is done, check if the game is over
     
     is_game_over:
@@ -622,8 +702,9 @@ move_done:
         j Q_pressed             # capsule collided at the start position, quit the game
 
     start_new_round:
-        new_capsule ()              # else, generate a new capsule and start a new round
-        j finalize_game_loop        # return to the game loop
+        save_info ()                # save the information about the current capsule to game memory
+        new_capsule ()              # generate a new capsule and start a new round
+        j update_playing_area       # check to see if any matches were made
 
 
 
