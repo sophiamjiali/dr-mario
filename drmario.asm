@@ -413,99 +413,177 @@ game_loop:
         j game_loop
         
         
-        
-check_rows:
-    # checks for any matching blocks in each row and removes them
-    
-    # $t0: x-coordinate
-    # $t1: y-coordinate
-    # $t2: black
-    # $t3: current colour
-    # $t4: max x
-    # $t5: max y
-    # $t6: num consequtive
-    # $t7: current consequtive colour
-    # $t8: start of colour x-coordinate
-    # $t9: start of colour y-coordinate
-    # $s7: min num of blocks per row - 1
-    
-    save_ra ()          # there are nested jumps, save the original return address
-    
-    lw $t2, black       # load the colour black
-    li $t4, 32          # load the maximum x-coordinate + 4 (to not clip off last pixel)
-    li $t5, 58          # load the maximum y-coordinate + 2
-    
-    rows_loops:
-        li $t1, 18          # initialize y-coordinate to the playing area offset
-        
-        rows_for_y:
-            bgt $t1, $t5, rows_end_loops     # if for-loop is done, row match checking is completed
-        
-            move $t7, $t2                   # set the current consequtive colour to black by default
-            li $t0, 6                       # initialize x-coordinate to the playing area offset
-            jal reset_consequtive           # reset consequtive coordinates to the current position
-        
-            rows_for_x:
-                bgt $t0, $t4, rows_next_y       # if for-loop is done, iterate to next y-coordinate in for-loop
+check_matches:
+    reset_consequtive:
+                li $t6, 1           # set the current consequtive number of blocks to one
+                move $t8, $t0       # set the x-coordinate to the current position
+                move $t9, $t1       # set the y-coordinate to the current position
+                jr $ra              # return to the for-loops
                 
-                get_pixel ($t0, $t1)            # fetch the address of the current pixel (represents the block)
-                lw $t3, 0($v0)                  # extract its colour
-                
-                beq $t3, $t2, rows_next_x       # if its black, skip to next iteration of the for loop
-                bne $t3, $t7, rows_diff_colour  # if the current block is a different colour than the current consequtive
-                
-                addi $t6, $t6, 1                # else, same colour, increment the number of consequtive blocks
-                j rows_next_x                   # continue to the next iteration of the for-loop
+    check_rows:
+        # checks for any matching blocks in each row and removes them
+        
+        # $t0: x-coordinate
+        # $t1: y-coordinate
+        # $t2: black
+        # $t3: current colour
+        # $t4: max x
+        # $t5: max y
+        # $t6: num consequtive
+        # $t7: current consequtive colour
+        # $t8: start of colour x-coordinate
+        # $t9: start of colour y-coordinate
+        # $s7: min num of blocks per row - 1
+        
+        save_ra ()          # there are nested jumps, save the original return address
+        
+        lw $t2, black       # load the colour black
+        li $t4, 32          # load the maximum x-coordinate + 4 (to not clip off last pixel)
+        li $t5, 58          # load the maximum y-coordinate + 2
+        
+        rows_loops:
+            li $t1, 18          # initialize y-coordinate to the playing area offset
             
-                rows_diff_colour:
-                    bgt $t6, $s7, rows_remove_match     # if a valid matching is found, remove it
-                    jal reset_consequtive               # else, reset consequtive information to the current pixel
-                    move $t7, $t3                       # set the consequtive colour to the current pixel
-                    j rows_next_x                       # continue to the next iteration of the for-loop
+            rows_for_y:
+                bgt $t1, $t5, rows_end_loops     # if for-loop is done, row match checking is completed
+            
+                move $t7, $t2                   # set the current consequtive colour to black by default
+                li $t0, 6                       # initialize x-coordinate to the playing area offset
+                jal reset_consequtive           # reset consequtive coordinates to the current position
+            
+                rows_for_x:
+                    bgt $t0, $t4, rows_next_y       # if for-loop is done, iterate to next y-coordinate in for-loop
                     
-            rows_next_x:
-                addi $t0, $t0, 2                # increment the x-coordinate
-                j rows_for_x                    # return to the for-loop
-            
-        rows_next_y:
-            addi $t1, $t1, 2                    # increment the y-coordinate
-            j rows_for_y                        # return to the for-loop
+                    get_pixel ($t0, $t1)            # fetch the address of the current pixel (represents the block)
+                    lw $t3, 0($v0)                  # extract its colour
+                    
+                    beq $t3, $t2, rows_next_x       # if its black, skip to next iteration of the for loop
+                    bne $t3, $t7, rows_diff_colour  # if the current block is a different colour than the current consequtive
+                    
+                    addi $t6, $t6, 1                # else, same colour, increment the number of consequtive blocks
+                    j rows_next_x                   # continue to the next iteration of the for-loop
+                
+                    rows_diff_colour:
+                        bgt $t6, $s7, rows_remove_match     # if a valid matching is found, remove it
+                        jal reset_consequtive               # else, reset consequtive information to the current pixel
+                        move $t7, $t3                       # set the consequtive colour to the current pixel
+                        j rows_next_x                       # continue to the next iteration of the for-loop
+                        
+                rows_next_x:
+                    addi $t0, $t0, 2                # increment the x-coordinate
+                    j rows_for_x                    # return to the for-loop
+                
+            rows_next_y:
+                addi $t1, $t1, 2                    # increment the y-coordinate
+                j rows_for_y                        # return to the for-loop
+        
+            rows_remove_match:
+                rows_match_loop:
+                    beq $t8, $t0, rows_end_match_loop   # once all of the match is removed, move on
+                    draw_square ($t8, $t1, $t2)         # remove the block at the current coordinates
+                    remove_info ($t8, $t1)              # remove the block's information stored in the game memory
+                    addi $t8, $t8, 2                    # increment to the next block
+                    j rows_match_loop
+                    
+                rows_end_match_loop: 
+                    addi $sp, $sp, 4        # original address isn't needed, deallocate its space on the stack
+                    j collapse_blocks       # collapses any blocks after removing the matching and recheck everything
+                
+        rows_end_loops:
+            load_ra ()          # restore the original return address
+            jr $ra              # return to the original call
+                
+                
+                
     
-        rows_remove_match:
-
-            rows_match_loop:
-                beq $t8, $t0, rows_end_match_loop   # once all of the match is removed, move on
-                draw_square ($t8, $t1, $t2)         # remove the block at the current coordinates
-                remove_info ($t8, $t1)              # remove the block's information stored in the game memory
-                addi $t8, $t8, 2                    # increment to the next block
-                j rows_match_loop
+    check_columns:
+        # checks for any matching blocks in each column and removes them; same as rows, comments omitted
+        
+        save_ra ()
+        
+        lw $t2, black
+        li $t4, 32          
+        li $t5, 58          
+        
+        columns_loops:
+            li $t1, 6
+            
+            columns_for_x:
+                bgt $t0, $t4, columns_end_loops
+                move $t7, $t2
+                li $t0, 18
+                jal reset_consequtive
                 
-            rows_end_match_loop:
-            
-                # call label that handles updating the rest of the playing area for falling blocks
+                columns_for_y:
+                    bgt $t1, $t5, columns_next_x
+                    
+                    get_pixel ($t0, $t1)
+                    lw $t3, 0($v0)
+                    
+                    beq $t3, $t2, columns_next_y
+                    beq $t3, $t2, columns_diff_colour
+                    
+                    addi $t6, $t6, 1
+                    j columns_next_y
+                    
+                    columns_diff_colour:
+                        bgt $t6, $s7, columns_remove_match
+                        jal reset_consequtive
+                        move $t7, $t3
+                        j columns_next_y
+                    
+                    columns_next_y:
+                        addi $t1, $t1, 2
+                        j columns_for_y
+                    
+                columns_next_x:
+                    addi $t0, $t0, 2
+                    j columns_for_x
                 
-                j rows_loops        # restart both for-loops
+            columns_remove_match:
+                columns_match_loop:
+                    bgt $t9, $t1, columns_end_match_loop
+                    draw_square ($t0, $t9, $t2)
+                    remove_info ($t0, $t9)
+                    addi $t9, $t9, 2
+                    j columns_match_loop
+                    
+                columns_end_match_loop: 
+                    addi $sp, $sp, 4
+                    j collapse_blocks
+        
+        columns_end_loops:
+            load_ra ()
+            jr $ra
+        
+collapse_blocks:
+    # after blocks are removed, collapse any blocks down the playing area
+    
+    # $t0: 
+    # $t1: 
+    # $t2: 
+    # $t3: 
+    # $t4: 
+    # $t5: 
+    # $t6: 
+    # $t7: 
+    
+    collapse_for_x:
+        
+        collapse_for_y:
             
-        reset_consequtive:
-            li $t6, 1           # set the current consequtive number of blocks to one
-            move $t8, $t0       # set the x-coordinate to the current position
-            move $t9, $t1       # set the y-coordinate to the current position
-            jr $ra              # return to the for-loops
-            
-    rows_end_loops:
-        load_ra ()          # restore the original return address
-        jr $ra              # return to the original call
-            
-            
-            
-
-check_columns:
-        
-        
-        
-        
-        
-        
+    
+    # iterate for each column bottom of playing area to top
+        # once found collapseable block, call a macro collapse_down (%x, %y)
+            # drop it down while there are still black blocks
+        # iterate to next block above it
+    
+    # once collapsed everything, jump to update_playing_area to recheck for any matches
+    
+    
+    
+    
+    
 
     
 check_move:
