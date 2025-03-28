@@ -235,6 +235,12 @@ GAME_MEMORY: .space 3840
     sw $v0, 4($sp)          # $v0 is used in this macro, save it to the stack to avoid overwriting
     sw $t0, 0($sp)          # $t0 is used in this macro, save it to the stack to avoid overwriting
     
+    addi $sp, $sp, -16      # allocate space for four (more) registers on the stack
+    sw $t0, 12($sp)         # $t0 is used in this macro, save it to the stack to avoid overwriting
+    sw $v0, 8($sp)          # $v0 is used in this macro, save it to the stack to avoid overwriting
+    sw $a0, 4($sp)          # $a0 is used in this macro, save it to the stack to avoid overwriting
+    sw $a1, 0($sp)          # $a1 is used in this macro, save it to the stack to avoid overwriting
+    
     li $v0, 42          # load syscall code for RANDGEN
     li $a0, 0           # set up RANGEN with generator 0
     li $a1, 3           # set the upper limit for the random number as 2
@@ -452,8 +458,9 @@ game_loop:
     # 1a. Check if key has been pressed
     lw $t0, ADDR_KBRD                   # load the base address for the keyboard
     lw $t1, 0($t0)                      # load the first word from the keyboard: flag
-    beq $t1, 0, finish_game_loop        # if a word was not detected, skip handling of the input
     
+    beq $t1, 0, finish_game_loop        # if a word was not detected, skip handling of the input
+
     # 1b. Check which key has been pressed
     keyboard_input:
         lw $t0, 4($t0)              # load in the second word from the keyboard: actual input value
@@ -715,6 +722,44 @@ collapse_playing_area:
 # Collision Checking
 ##############################################################################
 
+W_pressed:
+    # assuming no collision will occur, rotate the capsule 90 degrees clockwise
+    
+    beq $s2, 1, rotate_vertical             # if the capsule is vertical, rotate to horizontal
+    beq $s2, 2, rotate_horizontal           # if the capsule is horizontal, rotate to vertical
+    
+    rotate_horizontal:
+        li $t2, 4                           # set the direction to move to down
+        move_square ($s0, $s1, $t2)         # move the first half of the capsule down
+        addi $t0, $s0, 2                    # the second half is to the right of the original position
+        li $t2, 1                           # set the direction to move to left
+        move_square ($t0, $s1, $t2)         # move the second half of teh capsule left
+        li $s2, 1                           # set the capsule's orientation to vertical
+        j w_pressed_done
+    
+    rotate_vertical:
+        addi $t1, $s1, 2                    # the second half of the capsule is below the first half
+        li $t2, 2                           # set the direction to move to right
+        move_square ($s0, $t1, $t2)         # move the capsule's second half right
+        addi $t0, $s0, 2                    # the second half is now to the right of its original position
+        li $t2, 3                           # set the direction to move to up
+        move_square ($t0, $t1, $t2)         # move the capsule's second half up
+        li $s2, 2                           # set the capsule's orientation to horizontal
+        j w_pressed_done                    # return back to main
+        
+    w_pressed_done: j finalize_game_loop    # return back to the game loop
+
+A_pressed:
+    # assuming no collision will occur, move the capsule to the left
+    move_capsule (1)            # move the capsule left
+    subi $s0, $s0, 2            # update the x-coordinate
+    j finalize_game_loop        # return back to the game loop
+
+S_pressed:
+    # assuming no collisions will occur, move the capsule down
+    move_capsule (4)            # move the capsule down
+    addi $s1, $s1, 2            # update the y-coordinate
+    j finalize_game_loop        # return back to the game loop
 
 Q_pressed:
     li $v0, 10          # load the syscall code for quitting the program
