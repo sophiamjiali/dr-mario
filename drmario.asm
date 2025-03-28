@@ -48,6 +48,12 @@ GAME_MODE: .word 1
 # sets how fast gravity will move the capsule down barring a movement input
 GRAVITY_TIMER: .word 0
 
+# tracks when to make the viruses do a beautiful little sparkle sparkle
+VIRUS_ANIMATION_TIMER: .word 0
+
+# tracks the global number of viruses still in play
+NUM_VIRUS: .word 0
+
 # create a colour table to choose from when generating a random colour
 COLOUR_TABLE: .word 0xff0000, 0xffff00, 0x0000ff
 
@@ -65,14 +71,16 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
 
 # Features Implemented:
 #   Hard:
-#     1. 
+#     1. Animation: remove matches, drop blocks, viruses twinkle
+#
 #   Easy:
 #     1. Gravity: each second that passes automatically moves capsule down
 #       
 #       TO IMPLEMENT:
 #     2. Pause: displays paused message on screen upon pressing p
-#     3. increasing gravity
-#     4. 
+#     3. Increasing gravity
+#     4. Game Difficulty
+#     5. Game Mode
 
 ##############################################################################
 # Code
@@ -369,47 +377,59 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
 .macro remove_info (%x, %y)
     # removes the information about a pixel at the (x,y) coordinates from the game memory
     
-    move $a0, %x                        # load x-coordinate into a function argument register
-    move $a1, %y                        # load y-coordinate into a function argumnet register
+    move $a0, %x                            # load x-coordinate into a function argument register
+    move $a1, %y                            # load y-coordinate into a function argumnet register
     
-    addi $sp, $sp, -8        # allocate space for two (more) register on the stack
-    sw $t0, 4($sp)           # $t0 is used in this macro, save it to the stack to avoid overwriting
-    sw $t1, 0($sp)           # $t1 is used in this macro, save it to the stack to avoid overwriting
+    addi $sp, $sp, -8           # allocate space for two (more) register on the stack
+    sw $t0, 4($sp)              # $t0 is used in this macro, save it to the stack to avoid overwriting
+    sw $t1, 0($sp)              # $t1 is used in this macro, save it to the stack to avoid overwriting
     
-    get_memory_pixel ($a0, $a1)         # fetch the address of the pixel in memory
-    sb $zero, 0($v0)                    # erase the block type
-    lb $t1, 1($v0)                      # fetch the connection orientation of the block
-    sb $zero, 1($v0)                    # erase the connection orientation
+    get_memory_pixel ($a0, $a1)             # fetch the address of the pixel in memory
     
-    beq $t1, 0, remove_info_done        # if not connected to anything, done
-    beq $t1, 1, remove_left             # if connected on the left
-    beq $t1, 2, remove_right            # if connected on the right
-    beq $t1, 3, remove_up               # if connected above
-    beq $t1, 4, remove_down             # if connected below
+    lb $t0, 0($v0)                          # extract the block type code
+    beq $t0, 2, decrement_virus             # if its a virus, decrement the global counter
     
-    remove_left:
-        subi $t0, $a0, 2                    # shift the x-coordinate left by one block
-        get_memory_pixel ($t0, $a1)         # fetch the address in memory
-        j remove_info_done                  # update the second half's connection orientation
-    remove_right:
-        addi $t0, $a0, 2                    # shift the x-coordinate right by one block
-        get_memory_pixel ($t0, $a1)         # fetch the address in memory
-        j remove_info_done                  # update the second half's connection orientation
-    remove_up:
-        subi $t0, $a1, 2                    # shift the y-coordinate up by one block
-        get_memory_pixel ($a0, $t0)         # fetch the address in memory
-        j remove_info_done                  # update the second half's connection orientation
-    remove_down:
-        addi $t0, $a1, 2                    # shift the y-coordinate down by one block
-        get_memory_pixel ($a0, $t0)         # fetch the address in memory
-        j remove_info_done                  # update the second half's connection orientation
+    remove_info_continue:
+        sb $zero, 0($v0)                    # erase the block type
+        lb $t1, 1($v0)                      # fetch the connection orientation of the block
+        sb $zero, 1($v0)                    # erase the connection orientation
+        
+        beq $t1, 0, remove_info_done        # if not connected to anything, done
+        beq $t1, 1, remove_left             # if connected on the left
+        beq $t1, 2, remove_right            # if connected on the right
+        beq $t1, 3, remove_up               # if connected above
+        beq $t1, 4, remove_down             # if connected below
+        
+        remove_left:
+            subi $t0, $a0, 2                    # shift the x-coordinate left by one block
+            get_memory_pixel ($t0, $a1)         # fetch the address in memory
+            j remove_info_done                  # update the second half's connection orientation
+        remove_right:
+            addi $t0, $a0, 2                    # shift the x-coordinate right by one block
+            get_memory_pixel ($t0, $a1)         # fetch the address in memory
+            j remove_info_done                  # update the second half's connection orientation
+        remove_up:
+            subi $t0, $a1, 2                    # shift the y-coordinate up by one block
+            get_memory_pixel ($a0, $t0)         # fetch the address in memory
+            j remove_info_done                  # update the second half's connection orientation
+        remove_down:
+            addi $t0, $a1, 2                    # shift the y-coordinate down by one block
+            get_memory_pixel ($a0, $t0)         # fetch the address in memory
+            j remove_info_done                  # update the second half's connection orientation
+    
+    decrement_virus:
+        la $t0, NUM_VIRUS               # fetch the address of the global counter for the number of viruses
+        lw $t1, 0($t0)                  # fetch the number of viruses still in play
+        subi $t1, $t1, 1                # decrement the number of viruses by one
+        sw $t1, 0($t0)                  # save the counter incrementation
+        j remove_info_continue          # continue to removing the block's info
         
     remove_info_done:
-        sb $zero, 1($v0)                    # set the other half's connection orientation to zero
-       
-        lw $t1, 0($sp)          # restore the original value of $t1
-        lw $t0, 4($sp)          # restore the original value of $t0
-        addi $sp, $sp, 8        # free space used by the register
+        sb $zero, 1($v0)            # set the other half's connection orientation to zero
+
+        lw $t1, 0($sp)              # restore the original value of $t1
+        lw $t0, 4($sp)              # restore the original value of $t0
+        addi $sp, $sp, 8            # free space used by the register
     
 .end_macro
 
@@ -499,6 +519,11 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
     li $t2, 2                       # load the block type code for virus
     sb $t2, 0($v0)                  # save the block type code as the first byte
     sb $zero, 1($v0)                # save the orientation direction code as zero (not connected)
+    
+    la $t0, NUM_VIRUS               # fetch the address of the global counter for the number of viruses
+    lw $t1, 0($t0)                  # fetch the number of viruses still in play
+    addi $t1, $t1, 1                # increment the number of viruses by one
+    sw $t1, 0($t0)                  # save the counter incrementation
 .end_macro
 
 .macro save_ra ()
@@ -525,12 +550,15 @@ main:
     
     set_defaults ()                 # set all default values for the game
     jal initialize_game             # initialize the game with static drawings
-    new_capsule ()                  # draws a new capsule, info held in $s0-4
     jal new_viruses                 # generate viruses based on the game difficulty
+    new_capsule ()                  # draws a new capsule, info held in $s0-4
     
     j game_loop
 
 game_loop:
+    
+    jal virus_animation                 # animates the viruses
+    
     # 1a. Check if key has been pressed
     lw $t0, ADDR_KBRD                   # load the base address for the keyboard
     lw $t1, 0($t0)                      # load the first word from the keyboard: flag
@@ -581,6 +609,63 @@ check_timer:
     j S_pressed                         # simulate auto-drop
     
     
+    
+##############################################################################
+# Virus Animation
+##############################################################################
+virus_animation:
+    # every second, viruses will be animated to twinkle
+    
+    la $t0, VIRUS_ANIMATION_TIMER       # fetch the address of the virus animation timer
+    lw $t1, 0($t0)                      # extract its value
+    addi $t1, $t1, 15                   # increment its value by 15 ms
+    sw $t1, 0($t0)                      # save the value into memory
+    
+    li $t2, 750                        # load 1000 ms
+    blt $t1, $t2, ra_hop                # if not enough time has passed, return
+    li $t2, 0                           # else, enough time has passed to twinkle
+    sw $t2, 0($t0)                      # reset the animation timer
+    
+    li $t8, 30                          # initialize max x-coordinate + 2
+    li $t9, 58                          # initialize max y-coordinate + 2
+    
+    li $t1, 18                          # initialize the starting y-coordinate
+    
+    virus_for_y:
+        beq $t1, $t9, ra_hop            # all pixels checked, return to game loop
+        li $t0, 6                       # initialize the starting x-coordinate
+        
+        virus_for_x:
+            beq $t0, $t8, virus_next_y
+            
+            get_memory_pixel ($t0, $t1)         # fetch the address of the pixel in memory
+            lb $t2, 0($v0)                      # fetch the block type code from memory
+            
+            beq $t2, 2, animate_virus           # if a virus was found, animate it
+    
+        virus_next_x:
+            addi $t0, $t0, 2            # iterate to the next x-coordinate
+            j virus_for_x               # continue the x for-loop
+    virus_next_y:
+        addi $t1, $t1, 2                # iterate to the next y-coordinate
+        j virus_for_y                   # continue the y for-loop
+        
+    animate_virus:
+        move $t2, $t0                   # initialize a temporary x-coordinate
+        move $t3, $t1                   # initialize a temporary y-coordinate
+        
+        get_pixel ($t2, $t3)            # fetch the address of the current pixel
+        lw $t4, 0($v0)                  # extract the colour of the first pixel
+        addi $t2, $t2, 1                # increment to the next pixel
+        get_pixel ($t2, $t3)            # fetch the address of the next pixel
+        lw $t5, 0($v0)                  # extract the colour of the next pixel
+        
+        sw $t4, 0($v0)                  # colour the top right the original colour
+        sw $t5, -4($v0)                 # colour the top left the alt colour
+        sw $t5, 256($v0)                # colour the bottom right the alt colour
+        sw $t4, 252($v0)                # colour the bottom left the original colour
+        
+        j virus_next_x                  # continue the x for-loop
         
 ##############################################################################
 # Match Checking
@@ -590,7 +675,54 @@ reset_consequtive:
     li $t6, 1           # set the current consequtive number of blocks to one
     move $t8, $t0       # set the x-coordinate to the current position
     move $t9, $t1       # set the y-coordinate to the current position
-    jr $ra              # return to the for-loops        
+    jr $ra              # return to the for-loops  
+    
+.macro compare_colours (%consequtive, %current)
+    # evaluates if the current colour is the same (or the lighter variety) of 
+    # the consequtive colour; returns 0 for no, 1 for yes
+    
+    addi $sp, $sp, -4           # allocate space on the stack for one register
+    sw $t0, 0($sp)              # save $t0 to the stack
+    
+    move $a0, %consequtive          # move the current colour into a function argument register
+    move $a1, %current           # move the target colour into a function argument register
+    
+    lw $t0, RED                         # load the colour red
+    beq $a0, $t0, compare_red           # if the target colour is red
+    lw $t0, BLUE                        # load the colour red
+    beq $a0, $t0, compare_blue          # if the target colour is blue
+    lw $t0, YELLOW                      # load the colour red
+    beq $a0, $t0, compare_yellow        # if the target colour is yellow
+    
+    j compare_no_match                  # else, by default, no match was found
+    
+    compare_red:
+        beq $a1, $t0, compare_match     # if the current colour is red
+        lw $t0, LIGHT_RED               # load the alt colour light red
+        beq $a1, $t0, compare_match     # if the current colour is light red
+        j compare_no_match              # else, no match
+    compare_blue:
+        beq $a1, $t0, compare_match     # if the current colour is blue
+        lw $t0, LIGHT_BLUE               # load the alt colour light blue
+        beq $a1, $t0, compare_match     # if the current colour is light blue
+        j compare_no_match              # else, no match
+    compare_yellow:
+        beq $a1, $t0, compare_match     # if the current colour is yellow
+        lw $t0, LIGHT_YELLOW            # load the alt colour light yellow
+        beq $a1, $t0, compare_match     # if the current colour is light yellow
+        j compare_no_match              # else, no match
+    
+    compare_no_match:
+        li $v0, 0               # load the code into the return variable for no match found
+        j compare_done          # finalize the macro
+    compare_match:
+        li $v0, 1               # load the code into the return variable for match found
+        j compare_done          # finalize the macro
+        
+    compare_done:
+        lw $t0, 0($sp)          # restore the original value of $t0
+        addi $sp, $sp, 4        # free space on the stack
+.end_macro
     
 check_rows:
     # checks for any matching blocks in each row and removes them
@@ -630,7 +762,9 @@ check_rows:
                 lw $t3, 0($v0)                  # extract its colour
                 
                 beq $t3, $t2, rows_found_black      # if its black, skip to next iteration of the for loop
-                bne $t3, $t7, rows_diff_colour      # if the current block is a different colour than the current consequtive
+                
+                compare_colours ($t7, $t3)          # compare the current pixels colour to the current consequtive
+                beq $v0, 0, rows_diff_colour        # if the current colour is different
                 
                 addi $t6, $t6, 1                # else, same colour, increment the number of consequtive blocks
                 j rows_next_x                   # continue to the next iteration of the for-loop
@@ -678,9 +812,11 @@ check_columns:
     # exact same logic as rows, comments omitted and code compressed
     
     save_ra ()
+    
     lw $t2, BLACK
     li $t4, 30          
-    li $t5, 60          
+    li $t5, 60  
+    
     columns_loops:
         li $t0, 6
         columns_for_x:
@@ -690,28 +826,38 @@ check_columns:
             move $t7, $t2
             columns_for_y:
                 beq $t1, $t5, columns_next_x
+                
                 get_pixel ($t0, $t1)
                 lw $t3, 0($v0)
+                
                 beq $t3, $t2, columns_found_black
-                bne $t3, $t7, columns_diff_colour
+                
+                compare_colours ($t7, $t3)
+                beq $v0, 0, columns_diff_colour
+                
                 addi $t6, $t6, 1
                 j columns_next_y
+                
                 columns_diff_colour:
                     bgt $t6, $s7, columns_remove_match
                     jal reset_consequtive
                     move $t7, $t3
                     j columns_next_y
+                    
                 columns_found_black:
                     bgt $t6, $s7, columns_remove_match
                     jal reset_consequtive
                     move $t7, $t2
                     j columns_next_y
+                    
                 columns_next_y:
                     addi $t1, $t1, 2
                     j columns_for_y
+                    
             columns_next_x:
                 addi $t0, $t0, 2
                 j columns_for_x
+                
         columns_remove_match:
             columns_match_loop:
                 beq $t9, $t1, columns_end_match_loop
@@ -796,7 +942,7 @@ collapse_playing_area:
             
         collapse_right:
             get_pixel ($t0, $t1)                # fetch the address of the current pixel
-            lw $t2, 516($v0)                    # fetch the colour of the block below and to the right
+            lw $t2, 520($v0)                    # fetch the colour of the block below and to the right
             bne $t2, $t3, collapse_next_x       # second capsule half is supported, return to next for-loop iteration
             
             move_square ($t0, $t1, 4)           # else, move the current block down
