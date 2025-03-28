@@ -2,7 +2,7 @@
 # This file contains our implementation of Dr Mario.
 #
 # Student 1: Sophia Li, 1009009314
-# Student 2: Name, Student Number (if applicable)
+# Student 2: Alexander Lambermon, 1009710877
 #
 # We assert that the code submitted here is entirely our own 
 # creation, and will indicate otherwise when it is not.
@@ -32,7 +32,6 @@ ADDR_KBRD: .word 0xffff0000
 BLACK: .word 0x000000
 GRAY: .word 0x808080
 RED: .word 0xff0000
-GREEN: .word 0x00ff00
 BLUE: .word 0x0000ff
 YELLOW: .word 0xffff00
 
@@ -40,26 +39,23 @@ LIGHT_RED: .word 0xffcccb
 LIGHT_BLUE: .word 0xadd8e6
 LIGHT_YELLOW: .word 0xffa500
 
-# game difficulty; determines the number of viruses generated, etc.
+# game difficulty: determines the difficulty per game iteration
 GAME_DIFFICULTY: .word 1
 
+# game mode: determines the multiplier for virus generation and speed
+GAME_MODE: .word 1
+
+# sets how fast gravity will move the capsule down barring a movement input
+GRAVITY_TIMER: .word 0
+
 # create a colour table to choose from when generating a random colour
-COLOUR_TABLE: .word 0xff0000, 0x00ff00, 0x0000ff
+COLOUR_TABLE: .word 0xff0000, 0xffff00, 0x0000ff
 
 # formats how game memory appears in memory, organizational only
 SPACER: .space 24
 
-# allocate a block to format the bitmap in memory properly
-spacer: .space 8
-
-# allocate 24 x 40 = 960 words (3840 bytes) representing each pixel of the playing area
-GAME_MEMORY_ADDR: .word 0x10009220       # address of the state of the game stored in memory
+# allocate space to hold memory representing the playing area
 GAME_MEMORY: .space 3840                 # starts at address 0x10010040
-
-
-
-
-
 
 
 
@@ -67,22 +63,16 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
 # Notes
 ##############################################################################
 
-# - finish get_info to map pixel on bitmap to game memory
-# - finalize what each byte holds (orientation, type, ...)
-# - figure out how to do the rotation, see original game
-# - implement movement (finish milestone 2)
-
-##############################################################################
-
-# Save Register Designations:
-# $s0: x-coordinate of first half
-# $s1: y-coordinate of second half
-# $s2: capsule orientation
-# $s3: colour of first half
-# $s4: colour of second half
-# $s5:  
-# $s6: 
-# $s7: 
+# Features Implemented:
+#   Hard:
+#     1. 
+#   Easy:
+#     1. Gravity: each second that passes automatically moves capsule down
+#       
+#       TO IMPLEMENT:
+#     2. Pause: displays paused message on screen upon pressing p
+#     3. increasing gravity
+#     4. 
 
 ##############################################################################
 # Code
@@ -271,7 +261,7 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
 .end_macro
 
 .macro generate_colour ()
-    # generate a random colour out of the given choices: red, green, and blue
+    # generate a random colour out of the given choices: red, yellow, and blue
     
     addi $sp, $sp, -16      # allocate space for four (more) registers on the stack
     sw $a0, 12($sp)         # $a0 is used in this macro, save it to the stack to avoid overwriting
@@ -544,7 +534,7 @@ game_loop:
     # 1a. Check if key has been pressed
     lw $t0, ADDR_KBRD                   # load the base address for the keyboard
     lw $t1, 0($t0)                      # load the first word from the keyboard: flag
-    beq $t1, 0, finish_game_loop        # if a word was not detected, skip handling of the input
+    beq $t1, 0, check_timer             # if a word was not detected, induce gravity
     
     # 1b. Check which key has been pressed
     keyboard_input:
@@ -572,7 +562,25 @@ game_loop:
         j game_loop
         
         
-        
+##############################################################################
+# Gravity
+##############################################################################
+
+check_timer:
+    # checks the global clock to see if gravity should be induced
+
+    la $t0, GRAVITY_TIMER           # fetch the address of the gravity timer
+    lw $t1, 0($t0)                  # extract its value
+    addi $t1, $t1, 15               # increment by 15 ms
+    sw $t1, 0($t0)                  # increment the gravity timer
+    
+    li $t2, 1000                        # load 1000 ms
+    blt $t1, $t2, finish_game_loop      # if not enough time has passed, continue to game loop
+    li $t2, 0                           # else, enough time has passed to induce gravity, load zero
+    sw $t2, 0($t0)                      # reset the gravity timer
+    j S_pressed                         # simulate auto-drop
+    
+    
         
 ##############################################################################
 # Match Checking
