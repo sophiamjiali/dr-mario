@@ -54,6 +54,9 @@ VIRUS_ANIMATION_TIMER: .word 0
 # tracks the global number of viruses still in play
 NUM_VIRUS: .word 0
 
+# holds the pause status, 0 if off, 1 if on
+PAUSE_STATE: .word 0
+
 # create a colour table to choose from when generating a random colour
 COLOUR_TABLE: .word 0xff0000, 0xffff00, 0x0000ff
 
@@ -294,6 +297,53 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
     addi $sp, $sp, 16    # free space used by the four registers
 .end_macro
 
+.macro compare_colours (%consequtive, %current)
+    # evaluates if the current colour is the same (or the lighter variety) of 
+    # the consequtive colour; returns 0 for no, 1 for yes
+    
+    addi $sp, $sp, -4           # allocate space on the stack for one register
+    sw $t0, 0($sp)              # save $t0 to the stack
+    
+    move $a0, %consequtive          # move the current colour into a function argument register
+    move $a1, %current           # move the target colour into a function argument register
+    
+    lw $t0, RED                         # load the colour red
+    beq $a0, $t0, compare_red           # if the target colour is red
+    lw $t0, BLUE                        # load the colour red
+    beq $a0, $t0, compare_blue          # if the target colour is blue
+    lw $t0, YELLOW                      # load the colour red
+    beq $a0, $t0, compare_yellow        # if the target colour is yellow
+    
+    j compare_no_match                  # else, by default, no match was found
+    
+    compare_red:
+        beq $a1, $t0, compare_match     # if the current colour is red
+        lw $t0, LIGHT_RED               # load the alt colour light red
+        beq $a1, $t0, compare_match     # if the current colour is light red
+        j compare_no_match              # else, no match
+    compare_blue:
+        beq $a1, $t0, compare_match     # if the current colour is blue
+        lw $t0, LIGHT_BLUE               # load the alt colour light blue
+        beq $a1, $t0, compare_match     # if the current colour is light blue
+        j compare_no_match              # else, no match
+    compare_yellow:
+        beq $a1, $t0, compare_match     # if the current colour is yellow
+        lw $t0, LIGHT_YELLOW            # load the alt colour light yellow
+        beq $a1, $t0, compare_match     # if the current colour is light yellow
+        j compare_no_match              # else, no match
+    
+    compare_no_match:
+        li $v0, 0               # load the code into the return variable for no match found
+        j compare_done          # finalize the macro
+    compare_match:
+        li $v0, 1               # load the code into the return variable for match found
+        j compare_done          # finalize the macro
+        
+    compare_done:
+        lw $t0, 0($sp)          # restore the original value of $t0
+        addi $sp, $sp, 4        # free space on the stack
+.end_macro
+
 .macro move_info_down (%x, %y)
     # given (x,y) coordinates of a pixel in the display, move the information associated with it down a block
     
@@ -526,6 +576,31 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
     sw $t1, 0($t0)                  # save the counter incrementation
 .end_macro
 
+.macro is_paused ()
+    # returns 0 or 1 in $v0 if the game is currently paused
+    
+    addi $sp, $sp, -8           # allocate space for two registers on the stack
+    sw $t0, 4($sp)              # save $t0 to the stack
+    sw $t1, 0($sp)              # save $t1 to the stack
+    
+    la $t0, PAUSE_STATE         # fetch the address of the pause state in memory
+    lw $t1, 0($t0)              # extract the pause state
+    
+    beq $t1, 0, not_paused          # if not paused, return
+    
+    li $t1, 1                       # else, load the code for paused, one
+    move $v0, $t1                   # move the code into the variable return register
+    j pause_done                    # exit the macro
+    
+    not_paused:
+        move $v0, $zero             # move the code for not paused into the variable return register
+        
+    pause_done:
+        lw $t1, 0($sp)              # restore the original value of $t0
+        lw $t0, 4($sp)              # restore the original value of $t1
+        addi $sp, $sp, 8            # deallocate the space on the stack
+.end_macro
+
 .macro save_ra ()
     # saves the current return address in $ra to the stack, for when there are nested helper labels
     
@@ -539,6 +614,7 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
     lw $ra, 0($sp)          # restore the original address
     addi $sp, $sp, 4        # deallocate the space on the stack
 .end_macro
+
 
 ##############################################################################
 # Main Game Code
@@ -557,6 +633,7 @@ main:
 
 game_loop:
     
+    # pre-round checks
     jal virus_animation                 # animates the viruses
     
     # 1a. Check if key has been pressed
@@ -568,6 +645,10 @@ game_loop:
     keyboard_input:
         lw $t0, 4($t0)              # load in the second word from the keyboard: actual input value
         beq $t0, 0x71, Q_pressed    # user pressed Q: quit the program
+        beq $t0, 0x70, P_pressed    # user pressed P: pause the program
+        
+        is_paused()                     # evaluates if the game is paused; if yes, display pause icon
+        beq $v0, 1, draw_pause_icon     # if paused, continue to display to pause icon
         
     	# 2a. Check for collisions, 2b. Update locations (capsules), # 3. Draw the screen
     	beq $t0, 0x77, W_pressed    # rotate capsule 90 degrees clockwise
@@ -596,6 +677,9 @@ game_loop:
 
 check_timer:
     # checks the global clock to see if gravity should be induced
+    
+    is_paused()                     # evaluates if the game is paused; if yes, display pause icon
+    beq $v0, 1, finish_game_loop    # if paused, do not induce gravity
 
     la $t0, GRAVITY_TIMER           # fetch the address of the gravity timer
     lw $t1, 0($t0)                  # extract its value
@@ -604,6 +688,7 @@ check_timer:
     
     li $t2, 1000                        # load 1000 ms
     blt $t1, $t2, finish_game_loop      # if not enough time has passed, continue to game loop
+    
     li $t2, 0                           # else, enough time has passed to induce gravity, load zero
     sw $t2, 0($t0)                      # reset the gravity timer
     j S_pressed                         # simulate auto-drop
@@ -676,53 +761,6 @@ reset_consequtive:
     move $t8, $t0       # set the x-coordinate to the current position
     move $t9, $t1       # set the y-coordinate to the current position
     jr $ra              # return to the for-loops  
-    
-.macro compare_colours (%consequtive, %current)
-    # evaluates if the current colour is the same (or the lighter variety) of 
-    # the consequtive colour; returns 0 for no, 1 for yes
-    
-    addi $sp, $sp, -4           # allocate space on the stack for one register
-    sw $t0, 0($sp)              # save $t0 to the stack
-    
-    move $a0, %consequtive          # move the current colour into a function argument register
-    move $a1, %current           # move the target colour into a function argument register
-    
-    lw $t0, RED                         # load the colour red
-    beq $a0, $t0, compare_red           # if the target colour is red
-    lw $t0, BLUE                        # load the colour red
-    beq $a0, $t0, compare_blue          # if the target colour is blue
-    lw $t0, YELLOW                      # load the colour red
-    beq $a0, $t0, compare_yellow        # if the target colour is yellow
-    
-    j compare_no_match                  # else, by default, no match was found
-    
-    compare_red:
-        beq $a1, $t0, compare_match     # if the current colour is red
-        lw $t0, LIGHT_RED               # load the alt colour light red
-        beq $a1, $t0, compare_match     # if the current colour is light red
-        j compare_no_match              # else, no match
-    compare_blue:
-        beq $a1, $t0, compare_match     # if the current colour is blue
-        lw $t0, LIGHT_BLUE               # load the alt colour light blue
-        beq $a1, $t0, compare_match     # if the current colour is light blue
-        j compare_no_match              # else, no match
-    compare_yellow:
-        beq $a1, $t0, compare_match     # if the current colour is yellow
-        lw $t0, LIGHT_YELLOW            # load the alt colour light yellow
-        beq $a1, $t0, compare_match     # if the current colour is light yellow
-        j compare_no_match              # else, no match
-    
-    compare_no_match:
-        li $v0, 0               # load the code into the return variable for no match found
-        j compare_done          # finalize the macro
-    compare_match:
-        li $v0, 1               # load the code into the return variable for match found
-        j compare_done          # finalize the macro
-        
-    compare_done:
-        lw $t0, 0($sp)          # restore the original value of $t0
-        addi $sp, $sp, 4        # free space on the stack
-.end_macro
     
 check_rows:
     # checks for any matching blocks in each row and removes them
@@ -967,8 +1005,31 @@ collapse_playing_area:
 
 
 Q_pressed:
+    # quits the game
+    
     li $v0, 10          # load the syscall code for quitting the program
-   syscall              # invoke the syscall
+    syscall              # invoke the syscall
+   
+P_pressed:
+    # pauses or unpauses the game based on the current paused state
+    
+    la $t0, PAUSE_STATE                 # fetch the address of the pause state
+    lw $t1, 0($t0)                      # extract its value
+    beq $t1, 0, toggle_pause_on         # if off, turn it on
+    
+    j toggle_pause_off                  # else, its on; turn it off
+    
+    toggle_pause_on:
+        li $t1, 1                           # load one, value for toggled on
+        sw $t1, 0($t0)                      # turn the toggle off
+        jal draw_pause_icon                 # overlay the pause icon
+        j finish_game_loop                  # return to the game loop, pause
+        
+    toggle_pause_off:
+        sw $zero, 0($t0)                    # turn the toggle state off
+        jal erase_pause_icon                # remove the pause icon
+        j finish_game_loop                  # return to the game loop, unpause
+        
    
 W_pressed:
     # collision check for a potential 90 degree rotation of the current capsule
@@ -1272,6 +1333,72 @@ initialize_game:
                 add $t0, $t0, $t5       # move to the next pixel (row down or pixel to the right)
                 addi $t1, $t1, 1        # increment i
             j draw               # continue the for-loop
+            
+##############################################################################
+# Pause Screen
+##############################################################################
+
+draw_pause_icon:
+    li $t0, 54        # x
+    li $t1, 54        # y
+    lw $t2, GRAY
+
+    li $t3, 0
+draw_box_rows:
+    li $t4, 0
+draw_box_cols:
+    add $t5, $t0, $t4
+    add $t6, $t1, $t3
+    draw_pixel ($t5, $t6, $t2)
+    addi $t4, $t4, 1
+    li $t7, 10
+    blt $t4, $t7, draw_box_cols
+    addi $t3, $t3, 1
+    blt $t3, $t7, draw_box_rows
+
+    # Inner pause bars (vertical black lines)
+    lw $t2, BLACK
+
+    li $t3, 0
+pause_bar_left:
+    addi $t5, $t0, 2    # ⬅️ x = box x + 2 (centered horizontally)
+    addi $t6, $t1, 2    # ⬅️ y = box y + 2 (start lower to center vertically)
+    add $t6, $t6, $t3   # ⬅️ y = y + offset
+    draw_pixel ($t5, $t6, $t2)
+    addi $t3, $t3, 1
+    li $t7, 6           # ⬅️ bar height = 6
+    blt $t3, $t7, pause_bar_left
+
+    li $t3, 0
+pause_bar_right:
+    addi $t5, $t0, 6    # ⬅️ x = box x + 6 (second bar)
+    addi $t6, $t1, 2    # ⬅️ y = box y + 2
+    add $t6, $t6, $t3   # ⬅️ y = y + offset
+    draw_pixel ($t5, $t6, $t2)
+    addi $t3, $t3, 1
+    blt $t3, $t7, pause_bar_right
+
+    jr $ra
+    
+erase_pause_icon:
+    li $t0, 54        # x
+    li $t1, 54        # y
+    lw $t2, BLACK
+
+    li $t3, 0
+erase_box_rows:
+    li $t4, 0
+erase_box_cols:
+    add $t5, $t0, $t4
+    add $t6, $t1, $t3
+    draw_pixel ($t5, $t6, $t2)
+    addi $t4, $t4, 1
+    li $t7, 10
+    blt $t4, $t7, erase_box_cols
+    addi $t3, $t3, 1
+    blt $t3, $t7, erase_box_rows
+
+    jr $ra
 
 ##############################################################################
 # Global Helpers
@@ -1287,3 +1414,4 @@ animation_delay:
     li $a0, 70          # specify a delay of 70 ms
     syscall             # invoke the system call
     jr $ra              # return to where the helper was called
+    
