@@ -65,7 +65,7 @@ PAUSE_STATE: .word 0
 COLOUR_TABLE: .word 0xff0000, 0xffff00, 0x0000ff
 
 # formats how game memory appears in memory, organizational only
-SPACER: .space 24
+SPACER: .space 12
 
 # allocate space to hold memory representing the playing area
 GAME_MEMORY: .space 3840 
