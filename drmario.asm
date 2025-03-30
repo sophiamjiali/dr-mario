@@ -31,6 +31,7 @@ ADDR_KBRD: .word 0xffff0000
 # store each colour
 BLACK: .word 0x000000
 GRAY: .word 0x808080
+WHITE: .word 0xffffff
 RED: .word 0xff0000
 BLUE: .word 0x0000ff
 YELLOW: .word 0xffff00
@@ -39,13 +40,16 @@ LIGHT_RED: .word 0xffcccb
 LIGHT_BLUE: .word 0xadd8e6
 LIGHT_YELLOW: .word 0xffa500
 
-# game difficulty: determines the difficulty per game iteration
-GAME_DIFFICULTY: .word 1
+# game level: determines the difficulty per game iteration
+GAME_LEVEL: .word 1
 
 # game mode: determines the multiplier for virus generation and speed
 GAME_MODE: .word 1
 
 # sets how fast gravity will move the capsule down barring a movement input
+GRAVITY_SPEED: .word 1500
+
+# tracks the current timer that decides if gravity should be induced
 GRAVITY_TIMER: .word 0
 
 # tracks when to make the viruses do a beautiful little sparkle sparkle
@@ -64,7 +68,7 @@ COLOUR_TABLE: .word 0xff0000, 0xffff00, 0x0000ff
 SPACER: .space 24
 
 # allocate space to hold memory representing the playing area
-GAME_MEMORY: .space 3840                 # starts at address 0x10010040
+GAME_MEMORY: .space 3840 
 
 
 
@@ -78,12 +82,11 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
 #
 #   Easy:
 #     1. Gravity: each second that passes automatically moves capsule down
-#       
-#       TO IMPLEMENT:
 #     2. Pause: displays paused message on screen upon pressing p
-#     3. Increasing gravity
-#     4. Game Difficulty
-#     5. Game Mode
+#     3. Game Mode: play can select a game mode affecting virus number and speed
+#     4. Game Level: triggered upon eliminating all viruses, affects virus number and speed
+#       
+#     
 
 ##############################################################################
 # Code
@@ -240,6 +243,36 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
     addi $sp, $sp, 8     # free space used by the four registers
 .end_macro
 
+.macro draw_line (%start_x, %start_y, %end_x, %end_y, %colour, %direction)
+    # draws a line from the start to end coordinates in the specified direction 
+    # in the specified colour
+    
+    li $t0, %start_x                # extract the starting x-coordinate
+    li $t1, %start_y                # extract the starting y-coordinate
+    li $t3, %direction              # extract the direction
+    
+    beq $t3, 1, draw_vertical        # direction 1 specifies a vertical line
+    beq $t3, 2, draw_horizontal      # direction 2 specifies a horizontal line
+    
+    draw_vertical:
+        li $t4, %end_y                          # extract the end y-coordinate
+        draw_vertical_loop:
+            bgt $t1, $t4, draw_line_done        # exit the loop
+            draw_pixel ($t0, $t1, %colour)      # draw the pixel
+            addi $t1, $t1, 1                    # increment the y-coordinate by two
+            j draw_vertical_loop                # continue the loop
+            
+    draw_horizontal:
+        li $t4, %end_x                          # extract the end x-coordinate
+        draw_horizontal_loop:
+            bgt $t0, $t4, draw_line_done        # exit the loop
+            draw_pixel ($t0, $t1, %colour)      # draw the pixel
+            addi $t0, $t0, 1                    # increment the x-coordinate by two
+            j draw_horizontal_loop              # continue the loop
+            
+    draw_line_done:                         # exit the macro 
+.end_macro
+
 .macro draw_pixel (%x, %y, %colour)
     # draws a pixel of the given colour at the coordinate specified by (x,y)
     
@@ -269,6 +302,14 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
     lw $t1, 0($sp)          # restore the original $t1 value
     lw $t0, 4($sp)          # restore the original $t0 value
     addi $sp, $sp, 8        # free space used by the two registers
+.end_macro
+
+.macro draw_coordinates (%x, %y, %colour)
+    # adapter for draw_pixel to take literals
+    
+    li $a0, %x                              # move the literal x-coordinate into a register
+    li $a1, %y                              # move the literal y-coordinate into a register
+    draw_pixel ($a0, $a1, %colour)          # draw the pixel
 .end_macro
 
 .macro generate_colour ()
@@ -624,12 +665,12 @@ GAME_MEMORY: .space 3840                 # starts at address 0x10010040
 main:
     # Initialize the game
     
+    jal set_game_mode               # prompts the user to set a game mode
+    
     set_defaults ()                 # set all default values for the game
     jal initialize_game             # initialize the game with static drawings
-    jal new_viruses                 # generate viruses based on the game difficulty
-    new_capsule ()                  # draws a new capsule, info held in $s0-4
-    
-    j game_loop
+    j start_new_level               # initialize a new level with starting difficulty and mode
+
 
 game_loop:
     
@@ -662,6 +703,8 @@ game_loop:
     
     finish_game_loop:
     
+        jal is_level_completed          # checks to see if the level is completed: all viruses removed
+    
     	# 4. Sleep
     	li $v0, 32         # load the syscall code for delay
     	li $a0, 15         # specify a delay of 15 ms (60 updates/second)
@@ -671,9 +714,93 @@ game_loop:
         j game_loop
         
         
+
+##############################################################################
+# Level Completion
+##############################################################################
+
+start_new_level:
+    # starts a new level based on current (updated) game level
+    
+    jal clear_playing_area      # clear the bitmap display and game memory
+    jal new_viruses             # generate viruses based on updated game difficulty
+    jal set_gravity             # set gravity speed based on updated game difficulty
+    jal display_level           # displays the current level on the display
+    new_capsule ()              # generate a new capsule
+    j game_loop                 # begin the game loop
+     
+     
+is_level_completed:
+    # evaluates if all viruses were removed; if so, start a new level, increasing
+    # the game difficulty to a max of five
+    
+    lw $t0, NUM_VIRUS               # fetch the current number of viruses
+    bne $t0, $zero, ra_hop          # if viruses remain, return to the game loop
+    
+    la $t0, GAME_LEVEL              # fetch the address of the current game level
+    lw $t1, 0($t0)                  # extract the current game difficulty
+    beq $t1, 5, start_new_level     # if already max level, don't increment anything
+    
+    addi $t1, $t1, 1                # else, increment to the next game difficulty
+    sw $t1, 0($t0)                  # save the game difficulty to memory
+    
+    la $t0, GRAVITY_SPEED           # fetch the address of the current game speed
+    lw $t1, 0($t0)                  # extract the current game speed
+    
+    j start_new_level               # start a new level with the updated level
+        
+
+clear_playing_area:
+    # clears the bitmap display and game memory
+    
+    save_ra ()                  # nested label jumps, save the original return address
+    
+    lw $t2, BLACK               # fetch the colour black
+    li $t1, 18                  # initialize the starting y-coordinate
+    
+    clear_for_y:
+        beq $t1, 58, clear_done     # if the for-loops are complete, exit the loop
+        li $t0, 6                   # initialize the starting x-coordinate
+        
+        clear_for_x:
+            beq $t0, 30, clear_next_y       # if the for-loop completes, iterate to the next y-coordinate   
+            
+            draw_square ($t0, $t1, $t2)     # draw the current block in the bitmap display black
+            remove_info ($t0, $t1)          # remove the current pixel's information in the game memory
+            
+            addi $t0, $t0, 2    # increment the x-coordinate by two
+            j clear_for_x       # continue the for-loop
+            
+    clear_next_y:
+        addi $t1, $t1, 2        # increment the y-coordinate by two
+        j clear_for_y           # continue the for-loop
+        
+    clear_done:
+        jal display_level       # redraw the level display
+        load_ra ()              # fetch the original return address
+        jr $ra                  # return
+        
+        
 ##############################################################################
 # Gravity
 ##############################################################################
+
+set_gravity:
+    # sets the gravity speed based on game difficulty and level
+    
+    la $t0, GRAVITY_SPEED           # fetch the address of the gravity speed
+    li $t1, 2050                    # initialize the starting value to 2000 msss
+    
+    lw $t2, GAME_MODE               # fetch the current game mode
+    mul $t2, $t2, 500               # game mode changes the base speed by a multiplier of 500
+    
+    lw $t3, GAME_LEVEL              # fetch the current game level
+    mul $t3, $t3, 75                # game level changes the speed by a multiplier of 75
+    add $t2, $t2, $t3               # add both multipliers together
+    sub $t1, $t1, $t2               # subtract the starting speed by the multipliers
+    
+    sw $t1, 0($t0)                  # save the speed to memory
+    jr $ra                          # return to the original calling address
 
 check_timer:
     # checks the global clock to see if gravity should be induced
@@ -686,7 +813,7 @@ check_timer:
     addi $t1, $t1, 15               # increment by 15 ms
     sw $t1, 0($t0)                  # increment the gravity timer
     
-    li $t2, 1000                        # load 1000 ms
+    lw $t2, GRAVITY_SPEED               # fetch the current gravity speed
     blt $t1, $t2, finish_game_loop      # if not enough time has passed, continue to game loop
     
     li $t2, 0                           # else, enough time has passed to induce gravity, load zero
@@ -1235,17 +1362,21 @@ start_new_round:
 ##############################################################################
 
 new_viruses:
-    # generates new viruses according to game difficulty
+    # generates new viruses according to game difficulty and game mode
     
-    lw $t9, GAME_DIFFICULTY         # fetch the game difficulty
+    lw $t8, GAME_LEVEL              # fetch the game level
+    lw $t9, GAME_MODE               # fetch the game mode
+    
     mul $t9, $t9, 2                 # multiply the game difficulty by two
-    addi $t9, $t9, 2                # base number of viruses is four, offset for difficulty 1
+    add $t9, $t9, $t8               # add the game difficulty
+    
+    addi $t9, $t9, 1                # base number of viruses is four, offset for difficulty and mode 1
     
     li $t8, 0                       # initialize a counter
     
     new_viruses_loop:
         beq $t8, $t9, ra_hop        # once all viruses are generated, return to the game loop
-        generate_virus ()           
+        generate_virus ()           # call a macro that generates the viruses
         addi $t8, $t8, 1            # increment the counter by one
         j new_viruses_loop          # continue the for-loop
     
@@ -1334,6 +1465,322 @@ initialize_game:
                 addi $t1, $t1, 1        # increment i
             j draw               # continue the for-loop
             
+##############################################################################
+# Game Mode Selection
+##############################################################################
+
+set_game_mode:
+    # prompts the user to select a gamemode
+    
+    save_ra ()          # save the original return address
+    
+    lw $t2, WHITE       # load the colour white
+    jal draw_select     # draw 'game mode' as the title
+    jal draw_medium     # draw the medium mode
+    jal draw_hard       # draw the hard mode
+    
+    lw $t2, RED         # load the colour red
+    jal draw_easy       # draw the easy mode
+    li $t9, 1           # load 1 (easy) as the currently selected mode
+    
+game_mode_loop:
+
+    lw $t0, ADDR_KBRD                   # load the base address for the keyboard
+    lw $t1, 0($t0)                      # load the first word from the keyboard: flag
+    beq $t1, 0, game_mode_loop          # if nothing was detected, repeat the loop
+    
+    lw $t0, 4($t0)                      # load in the second word from the keyboard: actual input value
+    beq $t0, 0x61, select_down          # user pressed S: move down a selection
+    beq $t0, 0x77, select_up            # user pressed S: move down a selection
+    beq $t0, 0x20, select_mode          # user pressed S: move down a selection
+    
+    select_down:
+        lw $t2, WHITE                   # load the colour white
+        
+        beq $t9, 3, game_mode_loop      # if already the lowest selection, return
+        beq $t9, 1, move_down_medium    # if easy, move down to medium
+        beq $t9, 2, move_down_hard      # if medium, move down to hard
+        
+        move_down_medium:
+            jal draw_easy               # draw easy mode over as white
+            lw $t2, RED                 # load the colour red
+            jal draw_medium             # draw medium mode over as red
+            li $t9, 2                   # set the currently selected mode to medium
+            j game_mode_loop            # return to the loop until a mode is selected
+            
+        move_down_hard:
+            jal draw_medium             # draw medium mode over as white
+            lw $t2, RED                 # load the colour red
+            jal draw_hard               # draw hard mode over as red
+            li $t9, 3                   # set the currently selected mode to hard
+            j game_mode_loop            # return to the loop until a mode is selected
+            
+    select_up:
+        lw $t2, WHITE                   # load the colour white
+        
+        beq $t9, 1, game_mode_loop      # if already the highest selection, return
+        beq $t9, 2, move_up_easy        # if medium, move up to easy
+        beq $t9, 3, move_up_medium      # if hard, move up to easy
+        
+        move_up_easy:
+            jal draw_medium             # draw medium mode over as white
+            lw $t2, RED                 # load the colour red
+            jal draw_easy               # draw easy mode over as red
+            li $t9, 1                   # set the currently selected mode to easy
+            j game_mode_loop            # return to the loop until a mode is selected
+        move_up_medium:
+            jal draw_hard               # draw hard mode over as white
+            lw $t2, RED                 # load the colour red
+            jal draw_medium             # draw medium mode over as white
+            li $t9, 2                   # set the currently selected mode to medium
+            j game_mode_loop            # return to the loop until a mode is selected
+    select_mode:
+        la $t0, GAME_MODE               # fetch the address of game mode in memory
+        sw $t9, 0($t0)                  # save the selected game mode to memory
+        jal reset_display               # clears the display to black
+        load_ra ()                      # fetch the original return address
+        jr $ra                          # return to game initialization
+
+draw_selection_screen:
+    # draws the gamemode selection screen
+    
+    draw_select:
+        # draws the title
+        
+        draw_line (3, 3, 3, 9, $t2, 1)  # G
+        draw_line (4, 3, 7, 3, $t2, 2)
+        draw_coordinates (7, 4, $t2)
+        draw_line (3, 9, 7, 9, $t2, 2)
+        draw_line (7, 6, 7, 8, $t2, 1)
+        draw_line (5, 6, 6, 6, $t2, 2)
+        
+        draw_line (10, 3, 10, 9, $t2, 1)    # A
+        draw_line (11, 3, 14, 3, $t2, 2)
+        draw_line (14, 3, 14, 9, $t2, 1)
+        draw_line (11, 6, 13, 6, $t2, 2)
+        
+        draw_line (17, 3, 17, 9, $t2, 1)    # M
+        draw_line (21, 3, 21, 9, $t2, 1)
+        draw_coordinates (18, 4, $t2)
+        draw_coordinates (19, 5, $t2)
+        draw_coordinates (20, 4, $t2)
+        
+        draw_line (24, 3, 24, 9, $t2, 1)    # E
+        draw_line (25, 3, 28, 3, $t2, 2)
+        draw_line (25, 6, 28, 6, $t2, 2)
+        draw_line (25, 9, 28, 9, $t2, 2)
+        
+        
+        draw_line (35, 3, 35, 9, $t2, 1)    # M
+        draw_line (39, 3, 39, 9, $t2, 1)
+        draw_coordinates (36, 4, $t2)
+        draw_coordinates (37, 5, $t2)
+        draw_coordinates (38, 4, $t2)
+        
+        draw_line (43, 3, 45, 3, $t2, 2)    # O
+        draw_line (43, 9, 45, 9, $t2, 2)
+        draw_line (42, 4, 42, 8, $t2, 1)
+        draw_line (46, 4, 46, 8, $t2, 1)
+        
+        draw_line (49, 3, 52, 3, $t2, 2)    # D
+        draw_line (53, 4, 53, 8, $t2, 1)
+        draw_line (49, 9, 52, 9, $t2, 2)
+        draw_line (49, 3, 49, 9, $t2, 1)
+
+        draw_line (56, 3, 56, 9, $t2, 1)    # E
+        draw_line (56, 3, 60, 3, $t2, 2)
+        draw_line (56, 6, 60, 6, $t2, 2)
+        draw_line (56, 9, 60, 9, $t2, 2)
+    
+        jr $ra      # return to set_game_mode
+        
+    draw_easy:
+        draw_line (10, 16, 10, 21, $t2, 1)    # E
+        draw_line (10, 16, 14, 16, $t2, 2)
+        draw_line (10, 19, 14, 19, $t2, 2)
+        draw_line (10, 22, 14, 22, $t2, 2)
+        
+        draw_line (17, 16, 17, 22, $t2, 1)    # A
+        draw_line (17, 16, 21, 16, $t2, 2)
+        draw_line (21, 16, 21, 22, $t2, 1)
+        draw_line (17, 19, 21, 19, $t2, 2)
+        
+        draw_line (24, 16, 28, 16, $t2, 2)  # S
+        draw_line (24, 16, 24, 19, $t2, 1)
+        draw_line (24, 19, 28, 19, $t2, 2)
+        draw_line (28, 19, 28, 21, $t2, 1)
+        draw_line (24, 22, 28, 22, $t2, 2)
+        
+        draw_line (31, 16, 31, 18, $t2, 1)  # Y
+        draw_line (35, 16, 35, 18, $t2, 1)
+        draw_coordinates (32, 19, $t2)
+        draw_coordinates (34, 19, $t2)
+        draw_line (33, 20, 33, 22, $t2, 1)
+        
+        jr $ra      # return to set_game_mode
+        
+    draw_medium:
+        draw_line (10, 28, 10, 34, $t2, 1)    # M
+        draw_line (14, 28, 14, 34, $t2, 1)
+        draw_coordinates (11, 29, $t2)
+        draw_coordinates (12, 30, $t2)
+        draw_coordinates (13, 29, $t2)
+        
+        draw_line (17, 28, 17, 34, $t2, 1)    # E
+        draw_line (17, 28, 21, 28, $t2, 2)
+        draw_line (17, 31, 21, 31, $t2, 2)
+        draw_line (17, 34, 21, 34, $t2, 2)
+        
+        draw_line (24, 28, 27, 28, $t2, 2)    # D
+        draw_line (28, 29, 28, 33, $t2, 1)
+        draw_line (24, 34, 27, 34, $t2, 2)
+        draw_line (24, 28, 24, 34, $t2, 1)
+        
+        draw_line (31, 28, 35, 28, $t2, 2)  # I
+        draw_line (33, 28, 33, 34, $t2, 1)
+        draw_line (31, 34, 35, 34, $t2, 2)
+        
+        draw_line (38, 28, 38, 33, $t2, 1)  # U
+        draw_line (39, 34, 41, 34, $t2, 2)
+        draw_line (42, 28, 42, 33, $t2, 1)
+        
+        draw_line (45, 28, 45, 34, $t2, 1)    # M
+        draw_line (49, 28, 49, 34, $t2, 1)
+        draw_coordinates (46, 29, $t2)
+        draw_coordinates (47, 30, $t2)
+        draw_coordinates (48, 29, $t2)
+        
+        jr $ra      # return to set_game_mode
+        
+    draw_hard:
+        draw_line (10, 40, 10, 46, $t2, 1)  # H
+        draw_line (14, 40, 14, 46, $t2, 1)
+        draw_line (10, 43, 14, 43, $t2, 2)
+        
+        draw_line (17, 40, 17, 46, $t2, 1)    # A
+        draw_line (17, 40, 21, 40, $t2, 2)
+        draw_line (21, 40, 21, 46, $t2, 1)
+        draw_line (17, 43, 21, 43, $t2, 2)
+        
+        draw_line (24, 40, 24, 46, $t2, 1)  # R
+        draw_line (24, 40, 28, 40, $t2, 2)
+        draw_line (28, 40, 28, 43, $t2, 1)
+        draw_line (24, 43, 28, 43, $t2, 2)
+        draw_coordinates (26, 44, $t2)
+        draw_coordinates (27, 45, $t2)
+        draw_coordinates (28, 46, $t2)
+        
+        draw_line (31, 40, 34, 40, $t2, 2)    # D
+        draw_line (31, 40, 31, 46, $t2, 1)
+        draw_line (31, 46, 34, 46, $t2, 2)
+        draw_line (35, 41, 35, 45, $t2, 1)
+    
+        jr $ra      # return to set_game_mode
+        
+reset_display:
+    # colours the entire display black
+    
+    save_ra ()
+    lw $t2, BLACK 
+    li $t1, 0
+    reset_for_y:
+        beq $t1, 64, reset_done
+        li $t0, 0
+        reset_for_x:
+            beq $t0, 64, reset_next_y
+            draw_pixel ($t0, $t1, $t2)
+            addi $t0, $t0, 1
+            j reset_for_x
+    reset_next_y:
+        addi $t1, $t1, 1
+        j reset_for_y
+    reset_done: 
+        load_ra ()
+        jr $ra 
+        
+##############################################################################
+# Level Display 
+##############################################################################
+
+display_level:
+    # draws the level display at the top of the screen
+    
+    save_ra ()      # save the return register to the stack
+    lw $t2, WHITE   # load the colour white
+    
+    draw_line (35, 3, 35, 7, $t2, 1)    # L
+    draw_line (35, 7, 37, 7, $t2, 2)
+    
+    draw_line (39, 3, 41, 3, $t2, 2)    # E
+    draw_line (39, 3, 39, 7, $t2, 1)
+    draw_line (39, 5, 41, 5, $t2, 2)
+    draw_line (39, 7, 41, 7, $t2, 2)
+    
+    draw_line (43, 3, 43, 6, $t2, 1)    # V
+    draw_coordinates (44, 7, $t2)
+    draw_line (45, 3, 45, 6, $t2, 1)
+    
+    draw_line (47, 3, 49, 3, $t2, 2)    # E
+    draw_line (47, 3, 47, 7, $t2, 1)
+    draw_line (47, 5, 49, 5, $t2, 2)
+    draw_line (47, 7, 49, 7, $t2, 2)
+    
+    draw_line (51, 3, 51, 7, $t2, 1)    # L
+    draw_line (51, 7, 53, 7, $t2, 2)
+    
+    lw $t2, BLACK                           # fetch the colour black
+    draw_line (58, 3, 60, 3, $t2, 2)        # colour over the original level
+    draw_line (58, 4, 60, 4, $t2, 2)
+    draw_line (58, 5, 60, 5, $t2, 2)
+    draw_line (58, 6, 60, 6, $t2, 2)
+    draw_line (58, 7, 60, 7, $t2, 2)
+    lw $t2, WHITE                           # restore the colour white
+    
+    lw $t0, GAME_LEVEL              # fetch the current level
+    
+    beq $t0, 1, draw_level_one      # display level one
+    beq $t0, 2, draw_level_two      # display level one
+    beq $t0, 3, draw_level_three    # display level one
+    beq $t0, 4, draw_level_four     # display level one
+    beq $t0, 5, draw_level_five     # display level one
+    
+    draw_level_one:
+        draw_line (59, 3, 59, 7, $t2, 1)
+        draw_coordinates (58, 4, $t2)
+        draw_line (58, 7, 60, 7, $t2, 2)
+        load_ra ()          # restore the original return address
+        jr $ra              # return to the original position
+    draw_level_two:
+        draw_line (58, 3, 60, 3, $t2, 2)
+        draw_coordinates (60, 4, $t2)
+        draw_line (58, 5, 60, 5, $t2, 2)
+        draw_coordinates (58, 6, $t2)
+        draw_line (58, 7, 60, 7, $t2, 2)
+        load_ra ()          # restore the original return address
+        jr $ra              # return to the original position
+    draw_level_three:
+        draw_line (60, 3, 60, 7, $t2, 1)
+        draw_line (58, 3, 60, 3, $t2, 2)
+        draw_line (58, 5, 60, 5, $t2, 2)
+        draw_line (58, 7, 60, 7, $t2, 2)
+        load_ra ()          # restore the original return address
+        jr $ra              # return to the original position
+    draw_level_four:
+        draw_line (60, 3, 60, 7, $t2, 1)
+        draw_line (58, 3, 58, 5, $t2, 1)
+        draw_coordinates (59, 5, $t2)
+        load_ra ()          # restore the original return address
+        jr $ra              # return to the original position
+    draw_level_five:
+        draw_line (58, 3, 60, 3, $t2, 2)
+        draw_coordinates (58, 4, $t2)
+        draw_line (58, 5, 60, 5, $t2, 2)
+        draw_coordinates (60, 6, $t2)
+        draw_line (58, 7, 60, 7, $t2, 2)
+        draw_line (58, 3, 60, 3, $t2, 2)
+        load_ra ()          # restore the original return address
+        jr $ra              # return to the original position
+
 ##############################################################################
 # Pause Screen
 ##############################################################################
