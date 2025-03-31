@@ -59,7 +59,7 @@ BOTTLE_BLUE: .word 0xadd8e6
 
 LIGHT_RED: .word 0xffcccb
 LIGHT_BLUE: .word 0xadd8e6
-LIGHT_YELLOW: .word 0xffa500
+LIGHT_YELLOW: .word 0xf58216
 
 # create a colour table to choose from when generating a random colour
 COLOUR_TABLE: .word 0xcc1616, 0xffb300, 0x2f3269
@@ -90,7 +90,7 @@ NUM_VIRUS: .word 0
 PAUSE_STATE: .word 0
 
 # formats how game memory appears in memory, organizational only
-SPACER: .space 28        
+SPACER: .space 24        
 
 # allocate space to hold memory representing the playing area
 GAME_MEMORY: .space 3840 
