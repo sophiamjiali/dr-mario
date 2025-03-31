@@ -649,7 +649,7 @@ GAME_MEMORY: .space 3840
         bne $t2, $t3, draw_shadow       # if collision detected, draw the shadow
         beq $s2, 1, shadow_vertical     # if vertical, only check one pixel
         
-        lw $t2, 4($v0)                  # else, extract the colour under the capsule's second half
+        lw $t2, 8($v0)                  # else, extract the colour under the capsule's second half
         bne $t2, $t3, draw_shadow       # if collision detected, draw the shadow
         
         shadow_vertical:
