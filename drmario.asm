@@ -94,9 +94,11 @@ GAME_MEMORY: .space 3840
 	.text
 	.globl main
 	
-##############################################################################
-# Macros
-##############################################################################
+.macro set_defaults ()
+    # define defaults here
+    li $s6, 2       # number of pixels in a block
+    li $s7, 3       # minimum consequtive blocks that count as a match - 1
+.end_macro
 
 .macro set_defaults ()
     # define defaults here
@@ -165,7 +167,7 @@ GAME_MEMORY: .space 3840
         lw $t0, 4($sp)      # restore the original $t0 value
         addi $sp, $sp, 8    # free space used by the three registers
 .end_macro
-    
+
 .macro move_square (%x, %y, %direction)
     # given (x,y) coordinates, move the square defined around this point the specified direction
     
@@ -732,7 +734,7 @@ GAME_MEMORY: .space 3840
 # Main Game Code
 ##############################################################################
 
-    # Run the game.
+# Run the game.
 main:
     # Initialize the game
     
@@ -753,6 +755,8 @@ game_loop:
     lw $t1, 0($t0)                      # load the first word from the keyboard: flag
     beq $t1, 0, check_timer             # if a word was not detected, induce gravity
     
+    beq $t1, 0, finish_game_loop        # if a word was not detected, skip handling of the input
+
     # 1b. Check which key has been pressed
     keyboard_input:
         lw $t0, 4($t0)              # load in the second word from the keyboard: actual input value
@@ -893,14 +897,6 @@ check_timer:
     sw $t2, 0($t0)                      # reset the gravity timer
     j S_pressed                         # simulate auto-drop
     
-    
-    
-##############################################################################
-# Drop-Shadow
-##############################################################################
-
-
-        
     
 ##############################################################################
 # Virus Animation
@@ -1057,7 +1053,7 @@ check_columns:
     # exact same logic as rows, comments omitted and code compressed
     
     save_ra ()
-    
+   
     lw $t2, BLACK
     li $t4, 30          
     li $t5, 60  
@@ -1382,7 +1378,7 @@ move_S:
     move_capsule (4)            # move the capsule down
     add $s1, $s1, $s6           # update the y-coordinate
     j finish_game_loop          # return back to the game loop
-
+    
 move_D:
     # assuming no collision will occur, move the capsule to the right
     move_capsule (2)            # move the capsue right
@@ -1434,7 +1430,6 @@ start_new_round:
     save_info ()                # save the information about the current capsule to game memory
     new_capsule ()              # generate a new capsule and start a new round
     j update_playing_area       # check to see if any matches were made
-    
 
 
 ##############################################################################
