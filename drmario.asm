@@ -30,6 +30,7 @@ ADDR_KBRD: .word 0xffff0000
 
 # store each colour
 BLACK: .word 0x000000
+DARK_GRAY: .word 0x636363
 GRAY: .word 0x808080
 WHITE: .word 0xffffff
 RED: .word 0xff0000
@@ -65,12 +66,10 @@ PAUSE_STATE: .word 0
 COLOUR_TABLE: .word 0xff0000, 0xffff00, 0x0000ff
 
 # formats how game memory appears in memory, organizational only
-SPACER: .space 12
+SPACER: .space 8
 
 # allocate space to hold memory representing the playing area
 GAME_MEMORY: .space 3840 
-
-
 
 ##############################################################################
 # Notes
@@ -85,7 +84,8 @@ GAME_MEMORY: .space 3840
 #     2. Pause: displays paused message on screen upon pressing p
 #     3. Game Mode: play can select a game mode affecting virus number and speed
 #     4. Game Level: triggered upon eliminating all viruses, affects virus number and speed
-#       
+#     5. Drop Shadow: Displays a shadow to show where the capsule will fall
+#     6. Next Capsule: Displays on the right the next capsule to be generated
 #     
 
 ##############################################################################
@@ -617,6 +617,77 @@ GAME_MEMORY: .space 3840
     sw $t1, 0($t0)                  # save the counter incrementation
 .end_macro
 
+.macro drop_shadow (%type)
+    # displays a drop shadow for the current capsule location; if type is 0, erase, removes the current shadow,
+    # else, type 1 draws the shadow
+    
+    addi $sp, $sp, -16              # allocate space on the stack for four registers
+    sw $t0, 12($sp)                 # save $t0 to the stack
+    sw $t1, 8($sp)                  # save $t1 to the stack
+    sw $t2, 4($sp)                  # save $t2 to the stack
+    sw $t3, 0($sp)                  # save $t3 to the stack
+    
+    move $t0, $s0                   # fetch the capsule's x-coordinate
+    move $t1, $s1                   # fetch the capsule's y-coordinate
+    
+    beq $s2, 2, drop_horizontal     # if horizontal, increment y-coordinate by one block
+    addi $t1, $t1, 2                # else, vertical; increment by two blocks
+    
+    drop_horizontal:    
+        addi $t1, $t1, 2            # increment down by one block
+    
+    lw $t3, BLACK                   # load the colour black
+    
+    shadow_for_y:
+        beq $t1, 58, draw_shadow        # if no collisions, draw at bottle's bottom 
+        
+        get_pixel ($t0, $t1)            # fetch the address of the current pixel
+        lw $t2, 0($v0)                  # extract its colour
+        
+        bne $t2, $t3, draw_shadow       # if collision detected, draw the shadow
+        beq $s2, 1, shadow_vertical     # if vertical, only check one pixel
+        
+        lw $t2, 4($v0)                  # else, extract the colour under the capsule's second half
+        bne $t2, $t3, draw_shadow       # if collision detected, draw the shadow
+        
+        shadow_vertical:
+            addi $t1, $t1, 2            # increment to the next block down
+            j shadow_for_y              # continue the for-loop
+    
+    draw_shadow:
+        li $t3, %type                       # fetch the shadow type
+        beq $t3, 0, erase_shadow            # if type is 0, erase the shadow
+        beq $t3, 1, place_shadow            # if type is 1, draw the shadow
+        
+        erase_shadow:
+            move $t2, $t3                       # load the colour black
+            j draw_shadow_continue              # jump to drawing (erasing) the shadow
+        place_shadow:
+            lw $t2, DARK_GRAY                   # load the colour dark gray
+            
+        draw_shadow_continue:
+            subi $t1, $t1, 1                    # decrement to the available position's bottom pixel
+            
+            beq $s2, 1, draw_main_shadow        # if vertical, only draw the main block's shadow
+            
+            addi $t0, $t0, 3                    # else, horizontal; increment to the second half's right pixel
+            draw_pixel ($t0, $t1, $t2)          # draw the fourth pixel
+            subi $t0, $t0, 1                    # decrement the x-coordinate by one pixel
+            draw_pixel ($t0, $t1, $t2)          # draw the third pixel
+            subi $t0, $t0, 2                    # decrement the x-coordinate to the first pixel
+            
+            draw_main_shadow:
+                draw_pixel ($t0, $t1, $t2)      # draw the first pixel
+                addi $t0, $t0, 1                # increment the x-coordinate by one pixel
+                draw_pixel ($t0, $t1, $t2)      # draw the second pixel
+            
+    lw $t3, 0($sp)          # restore the original $t3 value
+    lw $t2, 4($sp)          # restore the original $t2 value
+    lw $t1, 8($sp)          # restore the original $t1 value
+    lw $t0, 12($sp)         # restore the original $t0 value
+    addi $sp, $sp, 16       # free space used by the four registers    
+.end_macro
+
 .macro is_paused ()
     # returns 0 or 1 in $v0 if the game is currently paused
     
@@ -674,7 +745,7 @@ main:
 
 game_loop:
     
-    # pre-round checks
+    # 0.5: Pre-round checks
     jal virus_animation                 # animates the viruses
     
     # 1a. Check if key has been pressed
@@ -691,6 +762,8 @@ game_loop:
         is_paused()                     # evaluates if the game is paused; if yes, display pause icon
         beq $v0, 1, draw_pause_icon     # if paused, continue to display to pause icon
         
+        drop_shadow (0)             # erase the current drop-shadow
+        
     	# 2a. Check for collisions, 2b. Update locations (capsules), # 3. Draw the screen
     	beq $t0, 0x77, W_pressed    # rotate capsule 90 degrees clockwise
         beq $t0, 0x61, A_pressed    # move capsule left
@@ -702,7 +775,7 @@ game_loop:
         jal check_columns         # checks for any matching blocks in columns and removes them
     
     finish_game_loop:
-    
+        drop_shadow (1)                 # draws the drop-shadow for the current capsule position
         jal is_level_completed          # checks to see if the level is completed: all viruses removed
     
     	# 4. Sleep
@@ -821,6 +894,13 @@ check_timer:
     j S_pressed                         # simulate auto-drop
     
     
+    
+##############################################################################
+# Drop-Shadow
+##############################################################################
+
+
+        
     
 ##############################################################################
 # Virus Animation
