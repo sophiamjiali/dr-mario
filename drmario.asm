@@ -15,61 +15,6 @@
 # - Base Address for Display:   0x10008000 ($gp)
 ##############################################################################
 
-    .data
-##############################################################################
-# Immutable Data
-##############################################################################
-# The address of the bitmap display. Don't forget to connect it!
-ADDR_DSPL: .word 0x10008000
-# The address of the keyboard. Don't forget to connect it!
-ADDR_KBRD: .word 0xffff0000
-
-##############################################################################
-# Mutable Data
-##############################################################################
-
-# store each colour
-BLACK: .word 0x000000
-DARK_GRAY: .word 0x636363
-GRAY: .word 0x808080
-WHITE: .word 0xffffff
-RED: .word 0xff0000
-BLUE: .word 0x0000ff
-YELLOW: .word 0xffff00
-
-LIGHT_RED: .word 0xffcccb
-LIGHT_BLUE: .word 0xadd8e6
-LIGHT_YELLOW: .word 0xffa500
-
-# game level: determines the difficulty per game iteration
-GAME_LEVEL: .word 1
-
-# game mode: determines the multiplier for virus generation and speed
-GAME_MODE: .word 1
-
-# sets how fast gravity will move the capsule down barring a movement input
-GRAVITY_SPEED: .word 1500
-
-# tracks the current timer that decides if gravity should be induced
-GRAVITY_TIMER: .word 0
-
-# tracks when to make the viruses do a beautiful little sparkle sparkle
-VIRUS_ANIMATION_TIMER: .word 0
-
-# tracks the global number of viruses still in play
-NUM_VIRUS: .word 0
-
-# holds the pause status, 0 if off, 1 if on
-PAUSE_STATE: .word 0
-
-# create a colour table to choose from when generating a random colour
-COLOUR_TABLE: .word 0xff0000, 0xffff00, 0x0000ff
-
-# formats how game memory appears in memory, organizational only
-SPACER: .space 8
-
-# allocate space to hold memory representing the playing area
-GAME_MEMORY: .space 3840 
 
 ##############################################################################
 # Notes
@@ -86,7 +31,70 @@ GAME_MEMORY: .space 3840
 #     4. Game Level: triggered upon eliminating all viruses, affects virus number and speed
 #     5. Drop Shadow: Displays a shadow to show where the capsule will fall
 #     6. Next Capsule: Displays on the right the next capsule to be generated
-#     
+
+##############################################################################
+
+    .data
+##############################################################################
+# Immutable Data
+##############################################################################
+# The address of the bitmap display. Don't forget to connect it!
+ADDR_DSPL: .word 0x10008000
+# The address of the keyboard. Don't forget to connect it!
+ADDR_KBRD: .word 0xffff0000
+
+##############################################################################
+# Mutable Data
+##############################################################################
+
+# store each colour
+BLACK: .word 0x000000
+DARK_GRAY: .word 0x636363
+GRAY: .word 0xc0c0c0
+WHITE: .word 0xffffff
+RED: .word 0xcc1616
+BLUE: .word 0x2f3269
+YELLOW: .word 0xffb300
+BOTTLE_BLUE: .word 0xadd8e6
+
+LIGHT_RED: .word 0xffcccb
+LIGHT_BLUE: .word 0xadd8e6
+LIGHT_YELLOW: .word 0xf58216
+
+# create a colour table to choose from when generating a random colour
+COLOUR_TABLE: .word 0xcc1616, 0xffb300, 0x2f3269
+
+# game level: determines the difficulty per game iteration
+GAME_LEVEL: .word 1
+
+# game mode: determines the multiplier for virus generation and speed
+GAME_MODE: .word 1
+
+# colours of the saved capsule halves; the next capsule used in play
+SAVED_CAPSULE_FIRST: .word 0x000000
+SAVED_CAPSULE_SECOND: .word 0x000000
+
+# sets how fast gravity will move the capsule down barring a movement input
+GRAVITY_SPEED: .word 1500
+
+# tracks the current timer that decides if gravity should be induced
+GRAVITY_TIMER: .word 0
+
+# tracks when to make the viruses do a beautiful little sparkle sparkle
+VIRUS_ANIMATION_TIMER: .word 0
+
+# tracks the global number of viruses still in play
+NUM_VIRUS: .word 0
+
+# holds the pause status, 0 if off, 1 if on
+PAUSE_STATE: .word 0
+
+# formats how game memory appears in memory, organizational only
+SPACER: .space 24        
+
+# allocate space to hold memory representing the playing area
+GAME_MEMORY: .space 3840 
+
 
 ##############################################################################
 # Code
@@ -100,37 +108,66 @@ GAME_MEMORY: .space 3840
     li $s7, 3       # minimum consequtive blocks that count as a match - 1
 .end_macro
 
-.macro set_defaults ()
-    # define defaults here
-    li $s6, 2       # number of pixels in a block
-    li $s7, 3       # minimum consequtive blocks that count as a match - 1
+.macro new_saved_capsule ()
+    # generates a new capsule on the side of the bottle; colours for the new capsule in play
+    # is fetched from these colours
+    
+    addi $sp, $sp -12               # allocate space on the stack for three registers
+    sw $t0, 8($sp)                  # save $t0 to the stack
+    sw $t1, 4($sp)                  # save $t1 to the stack
+    sw $t2, 0($sp)                  # save $t2 to the stack
+    
+    li $t0, 36                      # initialize the x-coordinate for the saved capsule
+    li $t1, 20                      # initialize the y-coordinate for the saved capsule
+    
+    generate_colour ()              # generate a random colour, stored in $v1
+    move $t2, $v1                   # extract the colour
+    draw_square ($t0, $t1, $t2)     # draw the top-half of the capsule
+    
+    la $t0, SAVED_CAPSULE_FIRST     # fetch the address of the saved capsule's first half
+    sw $t2, 0($t0)                  # save the generated colour
+    
+    li $t0, 36                      # (re)initialize the x-coordinate for the saved capsule
+    addi $t1, $t1, 2                # increment the y-coordinate down by one block
+    
+    generate_colour ()              # generate a random colour, stored in $v1
+    move $t2, $v1                   # extract the colour
+    draw_square ($t0, $t1, $t2)     # draw the bottom-half of the capsule
+    
+    la $t0, SAVED_CAPSULE_SECOND    # fetch the address of the saved capsule's second half
+    sw $t2, 0($t0)                  # save the generated colour
+    
+    lw $t2, 0($sp)                  # restore $t2 from the stack
+    lw $t1, 4($sp)                  # restore $t1 from the stack
+    lw $t0, 8($sp)                  # restore $t0 from the stack
+    addi $sp, $sp, 12               # free space on the stack
 .end_macro
 
-.macro new_capsule ()
-    # generates a new capsule in the mouth of the bottle, storing 
-    # its address as (x,y) coordinates in the save registers
+.macro generate_capsule ()
+    # generates a new capsule in the mouth of the bottle, storing its address as (x,y)
+    # coordinates in the save registers; fetches its colours from the stored capsule
     
     addi $sp, $sp, -4       # allocate space for one (more) register on the stack
     sw $t0, 0($sp)          # $t0 is used in this macro, save it to the stack to avoid overwriting 
     
-    generate_colour ()              # generate a random colour, stored in $v1
-    move $s3, $v1                   # set the first half's colour
+    lw $s3, SAVED_CAPSULE_FIRST     # set the first half's colour to the first saved colour
     li $s0, 16                      # set the x-coordinate
     li $s1, 16                      # set the y-coordinate
     draw_square ($s0, $s1, $s3)     # draw the top-half of the capsule
     
-    generate_colour ()              # generate a random colour, stored in $v1
-    move $s4, $v1                   # set the second half's colour
+    lw $s4, SAVED_CAPSULE_SECOND    # set the second half's colour to the second saved colour
     li $t0, 18                      # set the x-coordinate
     draw_square ($t0, $s1, $s4)     # draw the bottom-half of the capsule
     
     li $s2, 2                       # sets 'horizontal = 2' as orientation in $v1
     
-    lw $t0, 0($sp)       # restore the original $t0 value
-    addi $sp, $sp, 4     # free space used by the three registers
+    new_saved_capsule ()            # generate a new saved capsule
+    
+    lw $t0, 0($sp)                  # restore the original $t0 value
+    addi $sp, $sp, 4                # free space used by the three registers
 .end_macro
 
-.macro move_capsule (%direction)
+.macro shift_capsule (%direction)
     # move the current capsule the specified direction
     
     addi $sp, $sp, -8       # allocate space for two (more) registers on the stack
@@ -144,31 +181,31 @@ GAME_MEMORY: .space 3840
     
     move_vertical_capsule:
         add $t1, $s1, $s6                       # the second half is below of the first half
-        move_square ($s0, $t1, %direction)      # move the capsule's second half first to avoid being overwritten
-        move_square ($s0, $s1, %direction)      # move first half second, avoids overwriting the second half
-        j move_capsule_done                     # return back to main
+        shift_square ($s0, $t1, %direction)      # move the capsule's second half first to avoid being overwritten
+        shift_square ($s0, $s1, %direction)      # move first half second, avoids overwriting the second half
+        j shift_capsule_done                     # return back to main
         
     move_horizontal_capsule:
         beq $a2, 1, move_horizontal_capsule_left    # if moving left, move the capsule's first half first
         
         add $t0, $s0, $s6                       # the second half is to the right of the first half
-        move_square ($t0, $s1, %direction)      # move the second half first to avoid being overwritten
-        move_square ($s0, $s1, %direction)      # move first half second, avoids overwriting the second half
-        j move_capsule_done                     # return back to main
+        shift_square ($t0, $s1, %direction)      # move the second half first to avoid being overwritten
+        shift_square ($s0, $s1, %direction)      # move first half second, avoids overwriting the second half
+        j shift_capsule_done                     # return back to main
         
     move_horizontal_capsule_left: 
-        move_square ($s0, $s1, %direction)      # move the first half first to avoid being overwritten
+        shift_square ($s0, $s1, %direction)      # move the first half first to avoid being overwritten
         add $t0, $s0, $s6                       # the second half is to the right of the first half
-        move_square ($t0, $s1, %direction)      # move the second half second, avoids overwriting the first half
-        j move_capsule_done                     # return back to main
+        shift_square ($t0, $s1, %direction)      # move the second half second, avoids overwriting the first half
+        j shift_capsule_done                     # return back to main
  
-    move_capsule_done:                  
+    shift_capsule_done:                  
         lw $t1, 0($sp)      # restore the original $t1 value
         lw $t0, 4($sp)      # restore the original $t0 value
         addi $sp, $sp, 8    # free space used by the three registers
 .end_macro
 
-.macro move_square (%x, %y, %direction)
+.macro shift_square (%x, %y, %direction)
     # given (x,y) coordinates, move the square defined around this point the specified direction
     
     move $a0, %x                 # move the x-coordinate into a safe register to avoid overwriting
@@ -190,22 +227,22 @@ GAME_MEMORY: .space 3840
     
     draw_square ($t0, $t1, $t4)     # colour the original square at (x,y) black
     
-    beq $a2, 1, shift_left        # if direction specifies left
-    beq $a2, 2, shift_right       # if direction specifies right
     beq $a2, 3, shift_up          # if direction specifies up
+    beq $a2, 2, shift_right       # if direction specifies right
     beq $a2, 4, shift_down        # if direction specifies down
+    beq $a2, 1, shift_left        # if direction specifies left
     
-    shift_left:
-        sub $t0, $t0, $s6                   # shift the x-coordinate left by two units
+    shift_up:
+        sub $t1, $t1, $s6                   # shift the y-coordinate up by two units
         j move_done                         # completed, jump back
     shift_right:
         add $t0, $t0, $s6                   # shift the x-coordinate right by two units
         j move_done                         # completed, jump back
-    shift_up:
-        sub $t1, $t1, $s6                   # shift the y-coordinate up by two units
-        j move_done                         # completed, jump back
     shift_down:
         add $t1, $t1, $s6                   # shift the y-coordinate down by two units
+        j move_done                         # completed, jump back
+    shift_left:
+        sub $t0, $t0, $s6                   # shift the x-coordinate left by two units
         j move_done                         # completed, jump back
    
     move_done:
@@ -328,10 +365,10 @@ GAME_MEMORY: .space 3840
     li $a1, 3           # set the upper limit for the random number as 2
     syscall             # make the system call, returning to $a0
     
-    la $t1, COLOUR_TABLE        # load address of color table
+    la $t0, COLOUR_TABLE        # load address of color table
     sll $a0, $a0, 2             # multiply index by four (word size)
-    add $t1, $t1, $a0           # offset into table
-    lw $v1, 0($t1)              # load color into return register
+    add $t0, $t0, $a0           # offset into table
+    lw $v1, 0($t0)              # load color into return register
     
     lw $t0, 0($sp)       # restore the original $t0 value
     lw $v0, 4($sp)       # restore the original $v0 value
@@ -387,7 +424,7 @@ GAME_MEMORY: .space 3840
         addi $sp, $sp, 4        # free space on the stack
 .end_macro
 
-.macro move_info_down (%x, %y)
+.macro shift_info_down (%x, %y)
     # given (x,y) coordinates of a pixel in the display, move the information associated with it down a block
     
     addi $sp, $sp, -4           # allocate space for one (more) register on the stack
@@ -619,9 +656,78 @@ GAME_MEMORY: .space 3840
     sw $t1, 0($t0)                  # save the counter incrementation
 .end_macro
 
-.macro drop_shadow (%type)
-    # displays a drop shadow for the current capsule location; if type is 0, erase, removes the current shadow,
-    # else, type 1 draws the shadow
+.macro remove_shadow ()
+    # removes a drop shadow from the current capsule location
+    
+    addi $sp, $sp, -16              # allocate space on the stack for four registers
+    sw $t0, 12($sp)                 # save $t0 to the stack
+    sw $t1, 8($sp)                  # save $t1 to the stack
+    sw $t2, 4($sp)                  # save $t2 to the stack
+    sw $t3, 0($sp)                  # save $t3 to the stack
+    
+    move $t0, $s0                   # fetch the capsule's x-coordinate
+    move $t1, $s1                   # fetch the capsule's y-coordinate
+    
+    beq $s2, 2, drop_horizontal     # if horizontal, increment y-coordinate by one block
+    addi $t1, $t1, 2                # else, vertical; increment by two blocks
+    
+    drop_horizontal:    
+        addi $t1, $t1, 2            # increment down by one block
+    
+    lw $t3, BLACK                   # load the colour black
+    
+    remove_shadow_for_y:
+        beq $t1, 58, check_remove_shadow    # if no collision was found but the bottom, check for removal
+        
+        get_pixel ($t0, $t1)            # fetch the address of the current pixel
+        lw $t2, 0($v0)                  # extract its colour
+        
+        bne $t2, $t3, check_remove_shadow       # if collision detected, check if a shadow should be drawn
+        beq $s2, 1, remove_shadow_vertical             # if vertical, only check one pixel
+        
+        lw $t2, 8($v0)                          # else, extract the colour under the capsule's second half
+        bne $t2, $t3, check_remove_shadow              # if collision detected, check if a shadow should be drawn
+        
+        remove_shadow_vertical:
+            addi $t1, $t1, 2            # increment to the next block down
+            j remove_shadow_for_y       # continue the for-loop
+            
+    check_remove_shadow:
+        beq $s2, 2, check_shadow_horizontal         # if the capsule is horizontal
+        subi $t3, $t1, 4                            # else, vertical; check two blocks above
+        j is_valid_remove                           # check the validity of the removal
+        check_shadow_horizontal: subi $t3, $t1, 2   # check one block above
+            
+        is_valid_remove:
+            beq $t3, $s1, remove_shadow_done             # if flush against the block, don't remove
+            
+    lw $t2, BLACK                       # load the colour black
+    
+    subi $t1, $t1, 1                    # decrement to the available position's bottom pixel
+            
+    beq $s2, 1, remove_main_shadow        # if vertical, only draw the main block's shadow
+    
+    addi $t0, $t0, 3                    # else, horizontal; increment to the second half's right pixel
+    draw_pixel ($t0, $t1, $t2)          # draw the fourth pixel
+    subi $t0, $t0, 1                    # decrement the x-coordinate by one pixel
+    draw_pixel ($t0, $t1, $t2)          # draw the third pixel
+    subi $t0, $t0, 2                    # decrement the x-coordinate to the first pixel
+    
+    remove_main_shadow:
+        draw_pixel ($t0, $t1, $t2)      # draw the first pixel
+        addi $t0, $t0, 1                # increment the x-coordinate by one pixel
+        draw_pixel ($t0, $t1, $t2)      # draw the second pixel
+            
+    remove_shadow_done:
+        lw $t3, 0($sp)          # restore the original $t3 value
+        lw $t2, 4($sp)          # restore the original $t2 value
+        lw $t1, 8($sp)          # restore the original $t1 value
+        lw $t0, 12($sp)         # restore the original $t0 value
+        addi $sp, $sp, 16       # free space used by the four registers    
+.end_macro
+
+.macro drop_shadow ()
+    # displays a drop shadow for the current capsule location
     
     addi $sp, $sp, -16              # allocate space on the stack for four registers
     sw $t0, 12($sp)                 # save $t0 to the stack
@@ -641,53 +747,53 @@ GAME_MEMORY: .space 3840
     lw $t3, BLACK                   # load the colour black
     
     shadow_for_y:
-        beq $t1, 58, draw_shadow        # if no collisions, draw at bottle's bottom 
+        beq $t1, 58, check_shadow       # if no collisions, check if a shadow should be drawn
         
         get_pixel ($t0, $t1)            # fetch the address of the current pixel
         lw $t2, 0($v0)                  # extract its colour
         
-        bne $t2, $t3, draw_shadow       # if collision detected, draw the shadow
+        bne $t2, $t3, check_shadow      # if collision detected, check if a shadow should be drawn
         beq $s2, 1, shadow_vertical     # if vertical, only check one pixel
         
-        lw $t2, 4($v0)                  # else, extract the colour under the capsule's second half
-        bne $t2, $t3, draw_shadow       # if collision detected, draw the shadow
+        lw $t2, 8($v0)                  # else, extract the colour under the capsule's second half
+        bne $t2, $t3, check_shadow       # if collision detected, check if a shadow should be drawn
         
         shadow_vertical:
             addi $t1, $t1, 2            # increment to the next block down
             j shadow_for_y              # continue the for-loop
+            
+    check_shadow:
+        beq $s2, 1, check_shadow_vertical           # if the capsule is vertical
+        subi $t3, $t1, 2                            # else, horizontal; check the block is directly below the capsule
+        j is_valid_draw                             # verify validity
+        check_shadow_vertical:  subi $t3, $t1, 4    # check if the block is directly below the capsule
+            
+        is_valid_draw:
+            beq $t3, $s1, drop_shadow_done             # if flush against the block, don't remove
+            
+    lw $t2, DARK_GRAY                   # load the colour dark gray
     
-    draw_shadow:
-        li $t3, %type                       # fetch the shadow type
-        beq $t3, 0, erase_shadow            # if type is 0, erase the shadow
-        beq $t3, 1, place_shadow            # if type is 1, draw the shadow
-        
-        erase_shadow:
-            move $t2, $t3                       # load the colour black
-            j draw_shadow_continue              # jump to drawing (erasing) the shadow
-        place_shadow:
-            lw $t2, DARK_GRAY                   # load the colour dark gray
+    subi $t1, $t1, 1                    # decrement to the available position's bottom pixel
+    
+    beq $s2, 1, draw_main_shadow        # if vertical, only draw the main block's shadow
+    
+    addi $t0, $t0, 3                    # else, horizontal; increment to the second half's right pixel
+    draw_pixel ($t0, $t1, $t2)          # draw the fourth pixel
+    subi $t0, $t0, 1                    # decrement the x-coordinate by one pixel
+    draw_pixel ($t0, $t1, $t2)          # draw the third pixel
+    subi $t0, $t0, 2                    # decrement the x-coordinate to the first pixel
+    
+    draw_main_shadow:
+        draw_pixel ($t0, $t1, $t2)      # draw the first pixel
+        addi $t0, $t0, 1                # increment the x-coordinate by one pixel
+        draw_pixel ($t0, $t1, $t2)      # draw the second pixel
             
-        draw_shadow_continue:
-            subi $t1, $t1, 1                    # decrement to the available position's bottom pixel
-            
-            beq $s2, 1, draw_main_shadow        # if vertical, only draw the main block's shadow
-            
-            addi $t0, $t0, 3                    # else, horizontal; increment to the second half's right pixel
-            draw_pixel ($t0, $t1, $t2)          # draw the fourth pixel
-            subi $t0, $t0, 1                    # decrement the x-coordinate by one pixel
-            draw_pixel ($t0, $t1, $t2)          # draw the third pixel
-            subi $t0, $t0, 2                    # decrement the x-coordinate to the first pixel
-            
-            draw_main_shadow:
-                draw_pixel ($t0, $t1, $t2)      # draw the first pixel
-                addi $t0, $t0, 1                # increment the x-coordinate by one pixel
-                draw_pixel ($t0, $t1, $t2)      # draw the second pixel
-            
-    lw $t3, 0($sp)          # restore the original $t3 value
-    lw $t2, 4($sp)          # restore the original $t2 value
-    lw $t1, 8($sp)          # restore the original $t1 value
-    lw $t0, 12($sp)         # restore the original $t0 value
-    addi $sp, $sp, 16       # free space used by the four registers    
+    drop_shadow_done:
+        lw $t3, 0($sp)          # restore the original $t3 value
+        lw $t2, 4($sp)          # restore the original $t2 value
+        lw $t1, 8($sp)          # restore the original $t1 value
+        lw $t0, 12($sp)         # restore the original $t0 value
+        addi $sp, $sp, 16       # free space used by the four registers    
 .end_macro
 
 .macro is_paused ()
@@ -715,14 +821,14 @@ GAME_MEMORY: .space 3840
         addi $sp, $sp, 8            # deallocate the space on the stack
 .end_macro
 
-.macro save_ra ()
+.macro hold_return_address ()
     # saves the current return address in $ra to the stack, for when there are nested helper labels
     
     addi $sp, $sp, -4       # allocate space on the stack
     sw $ra, 0($sp)          # store the original $ra of main on the stack
 .end_macro
 
-.macro load_ra ()
+.macro fetch_return_address ()
     # loads the most recently saved return address back into $ra from the stack
     
     lw $ra, 0($sp)          # restore the original address
@@ -742,6 +848,7 @@ main:
     
     set_defaults ()                 # set all default values for the game
     jal initialize_game             # initialize the game with static drawings
+    new_saved_capsule ()            # initializes the first stored capsule
     j start_new_level               # initialize a new level with starting difficulty and mode
 
 
@@ -754,6 +861,7 @@ game_loop:
     lw $t0, ADDR_KBRD                   # load the base address for the keyboard
     lw $t1, 0($t0)                      # load the first word from the keyboard: flag
     beq $t1, 0, check_timer             # if a word was not detected, induce gravity
+    remove_shadow ()                    # erase the current drop-shadow
     
     beq $t1, 0, finish_game_loop        # if a word was not detected, skip handling of the input
 
@@ -766,8 +874,6 @@ game_loop:
         is_paused()                     # evaluates if the game is paused; if yes, display pause icon
         beq $v0, 1, draw_pause_icon     # if paused, continue to display to pause icon
         
-        drop_shadow (0)             # erase the current drop-shadow
-        
     	# 2a. Check for collisions, 2b. Update locations (capsules), # 3. Draw the screen
     	beq $t0, 0x77, W_pressed    # rotate capsule 90 degrees clockwise
         beq $t0, 0x61, A_pressed    # move capsule left
@@ -779,8 +885,8 @@ game_loop:
         jal check_columns         # checks for any matching blocks in columns and removes them
     
     finish_game_loop:
-        drop_shadow (1)                 # draws the drop-shadow for the current capsule position
         jal is_level_completed          # checks to see if the level is completed: all viruses removed
+        drop_shadow ()                  # draws the drop-shadow for the current capsule position
     
     	# 4. Sleep
     	li $v0, 32         # load the syscall code for delay
@@ -803,7 +909,8 @@ start_new_level:
     jal new_viruses             # generate viruses based on updated game difficulty
     jal set_gravity             # set gravity speed based on updated game difficulty
     jal display_level           # displays the current level on the display
-    new_capsule ()              # generate a new capsule
+    generate_capsule ()         # generate a new capsule based on the current saved capsule
+    new_saved_capsule ()        # generate a new saved capsule, the next capsule
     j game_loop                 # begin the game loop
      
      
@@ -830,7 +937,7 @@ is_level_completed:
 clear_playing_area:
     # clears the bitmap display and game memory
     
-    save_ra ()                  # nested label jumps, save the original return address
+    hold_return_address ()                  # nested label jumps, save the original return address
     
     lw $t2, BLACK               # fetch the colour black
     li $t1, 18                  # initialize the starting y-coordinate
@@ -854,7 +961,7 @@ clear_playing_area:
         
     clear_done:
         jal display_level       # redraw the level display
-        load_ra ()              # fetch the original return address
+        fetch_return_address ()              # fetch the original return address
         jr $ra                  # return
         
         
@@ -903,6 +1010,9 @@ check_timer:
 ##############################################################################
 virus_animation:
     # every second, viruses will be animated to twinkle
+    
+    lw $t0, PAUSE_STATE                 # fetch the pause state
+    beq $t0, 1, ra_hop                  # if paused, don't animate the viruses
     
     la $t0, VIRUS_ANIMATION_TIMER       # fetch the address of the virus animation timer
     lw $t1, 0($t0)                      # extract its value
@@ -968,19 +1078,7 @@ reset_consequtive:
 check_rows:
     # checks for any matching blocks in each row and removes them
     
-    # $t0: x-coordinate
-    # $t1: y-coordinate
-    # $t2: black
-    # $t3: current colour
-    # $t4: max x
-    # $t5: max y
-    # $t6: num consequtive
-    # $t7: current consequtive colour
-    # $t8: start of colour x-coordinate
-    # $t9: start of colour y-coordinate
-    # $s7: min num of blocks per row - 1
-    
-    save_ra ()          # there are nested jumps, save the original return address
+    hold_return_address ()          # there are nested jumps, save the original return address
     
     lw $t2, BLACK       # load the colour black
     li $t4, 32          # load the maximum x-coordinate + 4 (to not clip off last pixel)
@@ -1044,7 +1142,7 @@ check_rows:
                 j collapse_playing_area     # collapses any blocks after removing the matching and recheck everything
             
     rows_end_loops:
-        load_ra ()          # restore the original return address
+        fetch_return_address ()          # restore the original return address
         jr $ra              # return to the original call
             
 
@@ -1052,7 +1150,7 @@ check_columns:
     # checks for any matching blocks in each column and removes them
     # exact same logic as rows, comments omitted and code compressed
     
-    save_ra ()
+    hold_return_address ()
    
     lw $t2, BLACK
     li $t4, 30          
@@ -1105,13 +1203,13 @@ check_columns:
                 draw_square ($t8, $t9, $t2)
                 remove_info ($t8, $t9)
                 addi $t9, $t9, 2
-                jal animation_delay                 # sleep for one second to create an animation delay
+                jal animation_delay
                 j columns_match_loop
             columns_end_match_loop: 
                 addi $sp, $sp, 4
                 j collapse_playing_area
     columns_end_loops:
-        load_ra ()
+        fetch_return_address ()
         jr $ra
         
     
@@ -1122,15 +1220,6 @@ check_columns:
 
 collapse_playing_area:
 # after blocks are removed, collapse any blocks down the playing area
-
-    # $t0: current x-coordinate
-    # $t1: current y-coordinate
-    # $t2: curr colour
-    # $t3: black
-    # $t4: max x-coordinate
-    # $t5: max y-coordinate
-    # $t6: block info
-    # $t7: temporary multipurpose
 
     lw $t3, BLACK                       # load the colour black
     li $t4, 30                          # initialize the maximum x-coordinate
@@ -1170,14 +1259,14 @@ collapse_playing_area:
         move $t6, $v1                       # else, a capsule; fetch its orientation
         
         beq $t6, 0, collapse_direct         # if capsule half is not connected to another half
-        beq $t6, 2, collapse_right          # if the current block is connected to 
-        beq $t6, 3, collapse_up             # if the current block is connect
+        beq $t6, 2, collapse_right          # if the current block is horizontal
+        beq $t6, 3, collapse_up             # if the current block is vertical
         
-        j collapse_next_x                   # else, skip the block
+        j collapse_next_x                   # else, return to the for-loop
         
         collapse_direct:
-            move_square ($t0, $t1, 4)           # move the current block down
-            move_info_down ($t0, $t1)           # move the game memory information for the current block down
+            shift_square ($t0, $t1, 4)           # move the current block down
+            shift_info_down ($t0, $t1)           # move the game memory information for the current block down
             jal animation_delay                 # sleep for one second to create an animation delay
             j collapse_loops                    # finished moving the main block down, restart the full looping process
             
@@ -1186,14 +1275,14 @@ collapse_playing_area:
             lw $t2, 520($v0)                    # fetch the colour of the block below and to the right
             bne $t2, $t3, collapse_next_x       # second capsule half is supported, return to next for-loop iteration
             
-            move_square ($t0, $t1, 4)           # else, move the current block down
-            move_info_down ($t0, $t1)           # move the game memory information for the current block down
+            shift_square ($t0, $t1, 4)           # else, move the current block down
+            shift_info_down ($t0, $t1)           # move the game memory information for the current block down
             addi $t0, $t0, 2                    # move the x-coordinate to the next capsule half
             j collapse_direct                   # move the next half down and move on
     
         collapse_up:
-            move_square ($t0, $t1, 4)       # move the current block down
-            move_info_down ($t0, $t1)       # move the game memory information for the current block down
+            shift_square ($t0, $t1, 4)       # move the current block down
+            shift_info_down ($t0, $t1)       # move the game memory information for the current block down
             subi $t1, $t1, 2                # move the y-coordinate up to the next capsule half
             j collapse_direct               # move the next half down and move on
         
@@ -1205,7 +1294,6 @@ collapse_playing_area:
 ##############################################################################
 # Collision Checking
 ##############################################################################
-
 
 Q_pressed:
     # quits the game
@@ -1243,15 +1331,15 @@ W_pressed:
     beq $s2, 2, W_horizontal        # check for a horizontal capsule
     
     W_vertical:
-        add $t0, $s0, $s6            # check the pixel to the right of the first half
+        add $t0, $s0, $s6           # check the pixel to the right of the first half
         get_pixel ($t0, $s1)        # fetch the address of the pixel
         lw $t2, 0($v0)              # fetch the colour of the pixel
         beq $t3, $t2, move_W        # if no pixel to the right, then no collision
-        sub $t0, $s0, $s6            # else, check the pixel to the right of the first half
+        sub $t0, $s0, $s6           # else, check the pixel to the right of the first half
         get_pixel ($t0, $s1)        # fetch the address of the pixel
         lw $t2, 0($v0)              # fetch the colour of the pixel
         bne $t3, $t2, move_done     # if there is a collision, check if the game is over
-        move_capsule (1)            # else, move the capsule left
+        shift_capsule (1)            # else, move the capsule left
         subi $s0, $s0, 2            # update the current capsule's position records
         j move_W                    # then rotate the capsule
         
@@ -1347,41 +1435,41 @@ move_W:
     beq $s2, 2, rotate_horizontal           # if the capsule is horizontal, rotate to vertical
     
     rotate_horizontal:
-        move_square ($s0, $s1, 4)           # move the first half of the capsule down
+        shift_square ($s0, $s1, 4)           # move the first half of the capsule down
         add $t0, $s0, $s6                   # the second half is to the right of the original position
-        move_square ($t0, $s1, 1)           # move the second half of teh capsule left
+        shift_square ($t0, $s1, 1)           # move the second half of teh capsule left
         li $s2, 1                           # set the capsule's orientation to vertical
-        j w_pressed_done
+        j move_w_done
     
     rotate_vertical:
         get_pixel ($s0, $s1)                # fetch the address of the first half
         lw $t3, 0($v0)                      # extract the colour of the original half
         
         add $t1, $s1, $s6                   # the second half of the capsule is below the first half
-        move_square ($s0, $t1, 3)           # move the capsule's second half up over the first half
-        move_square ($s0, $s1, 2)           # move the capsule's second half up
+        shift_square ($s0, $t1, 3)           # move the capsule's second half up over the first half
+        shift_square ($s0, $s1, 2)           # move the capsule's second half up
         
         draw_square ($s0, $s1, $t3)         # draw the original first half
         li $s2, 2                           # set the capsule's orientation to horizontal
-        j w_pressed_done                    # return back to main
+        j move_w_done                    # return back to main
         
-    w_pressed_done: j finish_game_loop      # return back to the game loop
+    move_w_done: j finish_game_loop      # return back to the game loop
 
 move_A:
     # assuming no collision will occur, move the capsule to the left
-    move_capsule (1)            # move the capsule left
+    shift_capsule (1)            # move the capsule left
     sub $s0, $s0, $s6            # update the x-coordinate
     j finish_game_loop        # return back to the game loop
 
 move_S:
     # assuming no collisions will occur, move the capsule down
-    move_capsule (4)            # move the capsule down
+    shift_capsule (4)            # move the capsule down
     add $s1, $s1, $s6           # update the y-coordinate
     j finish_game_loop          # return back to the game loop
     
 move_D:
     # assuming no collision will occur, move the capsule to the right
-    move_capsule (2)            # move the capsue right
+    shift_capsule (2)            # move the capsue right
     add $s0, $s0, $s6           # update the x-coordinate
     j finish_game_loop          # return back to the game loop
 
@@ -1428,7 +1516,7 @@ move_done:
 
 start_new_round:
     save_info ()                # save the information about the current capsule to game memory
-    new_capsule ()              # generate a new capsule and start a new round
+    generate_capsule ()         # generate a new capsule and start a new round
     j update_playing_area       # check to see if any matches were made
 
 
@@ -1464,81 +1552,62 @@ new_viruses:
 initialize_game:
     # draws the initial static scene
     
-    save_ra ()              # there are nested helper labels, save the original return address
+    hold_return_address ()        # there are nested helper labels, save the original return address
     
-    # initialize variables to draw the vertical walls of the bottle
-    li $t2, 42              # set the number of loops to perform to draw each line
-    lw $t3, GRAY            # load the colour gray
-    li $t5, 256             # set the increment to move to the next pixel (down)
+    # draw the box around the saved capsule
+    lw $t2, BOTTLE_BLUE
+    draw_line (34, 18, 39, 18, $t2, 2)
+    draw_line (34, 18, 34, 25, $t2, 1)
+    draw_line (39, 18, 39, 25, $t2, 1)
+    draw_line (34, 25, 39, 25, $t2, 2)
     
-    # draw the left wall
-    addi $t0, $gp, 4368     # set the starting coordinate for the left wall's first pass
-    jal draw_line          # paint the left wall
-    addi $t0, $gp, 4116     # set the starting coordinate for the left wall's second pass
-    li $t2, 44              # draw the inner line one pixel longer than the inner
-    jal draw_line          # paint the left wall
+    lw $t2, BOTTLE_BLUE
+    draw_line (4, 17, 4, 58, $t2, 1)    # left outer wall
+    lw $t2, WHITE
+    draw_line (5, 17, 5, 58, $t2, 1)    # left inner wall
     
-    # draw the right wall
-    addi $t0, $gp, 4216     # set the starting coordinate for the right wall's first pass
-    jal draw_line          # paint the right wall
-    addi $t0, $gp, 4476     # set the starting coordinate for the right wall's second pass
-    li $t2, 42              # draw the outer line one pixel shorter than the inner
-    jal draw_line          # paint the right wall
+    lw $t2, BOTTLE_BLUE
+    draw_line (31, 17, 31, 58, $t2, 1)  # right outer wall
+    lw $t2, WHITE
+    draw_line (30, 17, 30, 58, $t2, 1)  # right inner wall
     
-    # draw the bottom
-    li $t2, 24              # set the number of loops to perform to draw the line
-    li $t5, 4               # set the increment to move to the next pixel (across)
+    lw $t2, BOTTLE_BLUE
+    draw_line (5, 16, 12, 16, $t2, 2)   # top horizontal left outer wall
+    lw $t2, WHITE
+    draw_line (5, 17, 13, 17, $t2, 2)   # top horizontal left inner wall
     
-    addi $t0, $gp, 14872    # set the starting coordinate for the bottom
-    jal draw_line          # paint the bottom of the bottle
-    addi $t0, $gp, 15128    # set the starting coordinate for the bottom
-    jal draw_line          # paint the bottom of the bottle
+    lw $t2, BOTTLE_BLUE
+    draw_line (23, 16, 30, 16, $t2, 2)  # top horizontal right outer wall
+    lw $t2, WHITE
+    draw_line (22, 17, 29, 17, $t2, 2)  # top horizontal right inner wall
     
-    # draw the mouth
-    li $t2, 8               # update number of loops to perform: horizontal portion
-    li $t5, 4               # set increment value: draw horizontally
-    addi $t0, $gp, 4120     # update coordinate
-    jal draw_line          # paint the line
-    addi $t0, $gp, 4376
-    jal draw_line
-    addi $t0, $gp, 4184
-    jal draw_line
-    addi $t0, $gp, 4440
-    jal draw_line
+    lw $t2, BOTTLE_BLUE
+    draw_line (5, 59, 30, 59, $t2, 2)   # bottom outer wall
+    lw $t2, WHITE
+    draw_line (6, 58, 29, 58, $t2, 2)  # bottom inner wall
     
-    li $t2, 4               # update number of loops to perform: first vertical portion 
-    li $t5, 256             # set incremental value: draw vertically
-    addi $t0, $gp, 3120     # update coordinate
-    jal draw_line          # paint the line
-    addi $t0, $gp, 3124
-    jal draw_line
-    addi $t0, $gp, 3160
-    jal draw_line
-    addi $t0, $gp, 3164
-    jal draw_line
+    lw $t2, BOTTLE_BLUE
+    draw_line (12, 12, 12, 15, $t2, 1)       # left lower mouth outer wall
+    lw $t2, WHITE
+    draw_line (13, 12, 13, 16, $t2, 1)       # left lower mouth inner wall
     
-    addi $t0, $gp, 2092     # draw the second vertical portion
-    jal draw_line
-    addi $t0, $gp, 2096
-    jal draw_line
-    addi $t0, $gp, 2140
-    jal draw_line
-    addi $t0, $gp, 2144
-    jal draw_line
+    lw $t2, BOTTLE_BLUE
+    draw_line (22, 12, 22, 16, $t2, 1)       # right lower mouth outer wall
+    lw $t2, WHITE
+    draw_line (21, 12, 21, 17, $t2, 1)       # right lower mouth inner wall
     
-    load_ra ()              # fetch the original return address
+    lw $t2, BOTTLE_BLUE
+    draw_line (11, 9, 12, 11, $t2, 1)        # left upper mouth outer wall
+    lw $t2, WHITE
+    draw_line (12, 9, 12, 11, $t2, 1)        # left upper mouth inner wall
+    
+    lw $t2, BOTTLE_BLUE
+    draw_line (23, 9, 23, 11, $t2, 1)        # right upper mouth outer wall
+    lw $t2, WHITE
+    draw_line (22, 9, 22, 11, $t2, 1)        # right upper mouth inner wall
+    
+    fetch_return_address ()              # fetch the original return address
     jr $ra                  # return back to main
-
-    draw_line:
-        li $t1, 0           # reset the initial value of i = 0
-        j draw              # enters the for-loop
-        
-        draw:
-            beq $t1, $t2, ra_hop    # once for-loop is done, return to label call in draw_bottle
-                sw $t3, 0($t0)          # paint the pixel gray
-                add $t0, $t0, $t5       # move to the next pixel (row down or pixel to the right)
-                addi $t1, $t1, 1        # increment i
-            j draw               # continue the for-loop
             
 ##############################################################################
 # Game Mode Selection
@@ -1547,7 +1616,7 @@ initialize_game:
 set_game_mode:
     # prompts the user to select a gamemode
     
-    save_ra ()          # save the original return address
+    hold_return_address ()          # save the original return address
     
     lw $t2, WHITE       # load the colour white
     jal draw_select     # draw 'game mode' as the title
@@ -1613,7 +1682,7 @@ game_mode_loop:
         la $t0, GAME_MODE               # fetch the address of game mode in memory
         sw $t9, 0($t0)                  # save the selected game mode to memory
         jal reset_display               # clears the display to black
-        load_ra ()                      # fetch the original return address
+        fetch_return_address ()                      # fetch the original return address
         jr $ra                          # return to game initialization
 
 draw_selection_screen:
@@ -1753,9 +1822,9 @@ draw_selection_screen:
         jr $ra      # return to set_game_mode
         
 reset_display:
-    # colours the entire display black
+    # colours the entire display black; compressed due to redundant logic
     
-    save_ra ()
+    hold_return_address ()
     lw $t2, BLACK 
     li $t1, 0
     reset_for_y:
@@ -1770,7 +1839,7 @@ reset_display:
         addi $t1, $t1, 1
         j reset_for_y
     reset_done: 
-        load_ra ()
+        fetch_return_address ()
         jr $ra 
         
 ##############################################################################
@@ -1780,7 +1849,7 @@ reset_display:
 display_level:
     # draws the level display at the top of the screen
     
-    save_ra ()      # save the return register to the stack
+    hold_return_address ()      # save the return register to the stack
     lw $t2, WHITE   # load the colour white
     
     draw_line (35, 3, 35, 7, $t2, 1)    # L
@@ -1823,7 +1892,7 @@ display_level:
         draw_line (59, 3, 59, 7, $t2, 1)
         draw_coordinates (58, 4, $t2)
         draw_line (58, 7, 60, 7, $t2, 2)
-        load_ra ()          # restore the original return address
+        fetch_return_address ()          # restore the original return address
         jr $ra              # return to the original position
     draw_level_two:
         draw_line (58, 3, 60, 3, $t2, 2)
@@ -1831,20 +1900,20 @@ display_level:
         draw_line (58, 5, 60, 5, $t2, 2)
         draw_coordinates (58, 6, $t2)
         draw_line (58, 7, 60, 7, $t2, 2)
-        load_ra ()          # restore the original return address
+        fetch_return_address ()          # restore the original return address
         jr $ra              # return to the original position
     draw_level_three:
         draw_line (60, 3, 60, 7, $t2, 1)
         draw_line (58, 3, 60, 3, $t2, 2)
         draw_line (58, 5, 60, 5, $t2, 2)
         draw_line (58, 7, 60, 7, $t2, 2)
-        load_ra ()          # restore the original return address
+        fetch_return_address ()          # restore the original return address
         jr $ra              # return to the original position
     draw_level_four:
         draw_line (60, 3, 60, 7, $t2, 1)
         draw_line (58, 3, 58, 5, $t2, 1)
         draw_coordinates (59, 5, $t2)
-        load_ra ()          # restore the original return address
+        fetch_return_address ()          # restore the original return address
         jr $ra              # return to the original position
     draw_level_five:
         draw_line (58, 3, 60, 3, $t2, 2)
@@ -1853,7 +1922,7 @@ display_level:
         draw_coordinates (60, 6, $t2)
         draw_line (58, 7, 60, 7, $t2, 2)
         draw_line (58, 3, 60, 3, $t2, 2)
-        load_ra ()          # restore the original return address
+        fetch_return_address ()          # restore the original return address
         jr $ra              # return to the original position
 
 ##############################################################################
@@ -1861,72 +1930,45 @@ display_level:
 ##############################################################################
 
 draw_pause_icon:
-    li $t0, 54        # x
-    li $t1, 54        # y
     lw $t2, GRAY
-
-    li $t3, 0
-draw_box_rows:
-    li $t4, 0
-draw_box_cols:
-    add $t5, $t0, $t4
-    add $t6, $t1, $t3
-    draw_pixel ($t5, $t6, $t2)
-    addi $t4, $t4, 1
-    li $t7, 10
-    blt $t4, $t7, draw_box_cols
-    addi $t3, $t3, 1
-    blt $t3, $t7, draw_box_rows
-
-    # Inner pause bars (vertical black lines)
+    draw_line (50, 60, 60, 60, $t2, 2)
+    draw_line (50, 59, 60, 59, $t2, 2)
+    draw_line (50, 58, 60, 58, $t2, 2)
+    draw_line (50, 57, 60, 57, $t2, 2)
+    draw_line (50, 56, 60, 56, $t2, 2)
+    draw_line (50, 55, 60, 55, $t2, 2)
+    draw_line (50, 54, 60, 54, $t2, 2)
+    draw_line (50, 53, 60, 53, $t2, 2)
+    draw_line (50, 52, 60, 52, $t2, 2)
+    draw_line (50, 51, 60, 51, $t2, 2)
     lw $t2, BLACK
-
-    li $t3, 0
-pause_bar_left:
-    addi $t5, $t0, 2    # ⬅️ x = box x + 2 (centered horizontally)
-    addi $t6, $t1, 2    # ⬅️ y = box y + 2 (start lower to center vertically)
-    add $t6, $t6, $t3   # ⬅️ y = y + offset
-    draw_pixel ($t5, $t6, $t2)
-    addi $t3, $t3, 1
-    li $t7, 6           # ⬅️ bar height = 6
-    blt $t3, $t7, pause_bar_left
-
-    li $t3, 0
-pause_bar_right:
-    addi $t5, $t0, 6    # ⬅️ x = box x + 6 (second bar)
-    addi $t6, $t1, 2    # ⬅️ y = box y + 2
-    add $t6, $t6, $t3   # ⬅️ y = y + offset
-    draw_pixel ($t5, $t6, $t2)
-    addi $t3, $t3, 1
-    blt $t3, $t7, pause_bar_right
-
+    draw_line (53, 53, 53, 58, $t2, 1)
+    draw_line (57, 53, 57, 58, $t2, 1)
+    
     jr $ra
     
 erase_pause_icon:
-    li $t0, 54        # x
-    li $t1, 54        # y
     lw $t2, BLACK
-
-    li $t3, 0
-erase_box_rows:
-    li $t4, 0
-erase_box_cols:
-    add $t5, $t0, $t4
-    add $t6, $t1, $t3
-    draw_pixel ($t5, $t6, $t2)
-    addi $t4, $t4, 1
-    li $t7, 10
-    blt $t4, $t7, erase_box_cols
-    addi $t3, $t3, 1
-    blt $t3, $t7, erase_box_rows
-
+    draw_line (50, 60, 60, 60, $t2, 2)
+    draw_line (50, 59, 60, 59, $t2, 2)
+    draw_line (50, 58, 60, 58, $t2, 2)
+    draw_line (50, 57, 60, 57, $t2, 2)
+    draw_line (50, 56, 60, 56, $t2, 2)
+    draw_line (50, 55, 60, 55, $t2, 2)
+    draw_line (50, 54, 60, 54, $t2, 2)
+    draw_line (50, 53, 60, 53, $t2, 2)
+    draw_line (50, 52, 60, 52, $t2, 2)
+    draw_line (50, 51, 60, 51, $t2, 2)
+    draw_line (53, 53, 53, 58, $t2, 1)
+    draw_line (57, 53, 57, 58, $t2, 1)
+    
     jr $ra
 
 ##############################################################################
 # Global Helpers
 ##############################################################################
 
-# allows 'beq' to jump to a return address with 'jal'
+# in-line returning to return address, can be called on a conditional
 ra_hop: jr $ra
 
 animation_delay:
